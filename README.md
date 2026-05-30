@@ -145,6 +145,14 @@ fact-level model.
 - This release observes context. It does not yet manage canonical context
   upstream for every agent runtime.
 
+## Roadmap
+
+- Fresh public screenshots and a short demo clip from sanitized demo data.
+- Signed and notarized macOS release artifacts.
+- GitHub CI once the publishing token can create workflows.
+- Broader runtime compatibility notes for install-once verified capture.
+- Canonical context management after the observability workflow proves demand.
+
 ## Development
 
 ```bash
@@ -153,4 +161,4 @@ make app-build
 make release
 ```
 
-The release source of truth is `docs/specs/release-readiness.md`.
+The public launch source of truth is `docs/specs/public-launch-epic.md`.
