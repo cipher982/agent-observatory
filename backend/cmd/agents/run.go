@@ -13,11 +13,12 @@ import (
 	"github.com/cipher982/agent-observatory/backend/internal/wire"
 )
 
-// runRun implements `observatory run <claude|codex|antigravity> [args...]`.
-// It owns the launch: starts the intercepting proxy with an ephemeral CA, sets
-// the child's proxy + scoped-trust env, execs the real CLI, and on exit reports
-// the VERIFIED facts captured from the wire. This is the OPT-IN path to the
-// VERIFIED tier — never passive.
+// runRun implements `agents run <claude|codex|antigravity> [args...]`.
+// It is a developer fallback for one-off proxy debugging: it owns the launch,
+// starts an intercepting proxy with an ephemeral CA, sets the child process env,
+// execs the real CLI, and reports captured wire facts on exit. The product path
+// is `agents install`, which makes newly launched agents ambiently visible
+// without wrappers.
 func runRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	var port int
