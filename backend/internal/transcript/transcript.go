@@ -1,6 +1,6 @@
 // Package transcript discovers live/recent coding-agent sessions by reading the
-// on-disk JSONL transcripts that the CLIs already write (the "Longhouse" approach:
-// filesystem only, no wire interception).
+// on-disk JSONL transcripts that the CLIs already write: filesystem only, no
+// wire interception.
 //
 // Supported runtimes:
 //   - "claude"      : ~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl

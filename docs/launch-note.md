@@ -11,9 +11,10 @@ for the assembled prompt/tool state. This app makes that state inspectable.
 The first release is local-first. It reads local transcripts passively, verifies
 outbound requests through an install-once local proxy, and stores only derived
 facts instead of raw prompt bodies. After install, people use their agents
-normally; there is no wrapper command or hosted account in the primary flow. The
-native app includes a demo mode so the product is visible immediately, then a
-live mode for real local traffic.
+normally; agents that honor standard proxy/trust environment variables are
+captured without a wrapper command or hosted account in the primary flow. The
+native app includes a demo mode so the product is visible immediately, then a live
+mode for real local traffic.
 
 What is included:
 

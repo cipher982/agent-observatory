@@ -18,6 +18,7 @@
   <img alt="macOS" src="https://img.shields.io/badge/native%20app-macOS%2026%20preview-111827">
   <img alt="Go" src="https://img.shields.io/badge/Go-1.26-00ADD8">
   <img alt="SwiftUI" src="https://img.shields.io/badge/SwiftUI-Liquid%20Glass-7c3aed">
+  <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/cipher982/agent-observatory/ci.yml?branch=main&label=CI">
   <img alt="Version" src="https://img.shields.io/badge/version-v0.1.0-f59e0b">
 </p>
 
@@ -135,10 +136,12 @@ agents install
 agents status
 ```
 
-Then use Claude, Codex, and other agents normally. Newly launched agents route
-through the local Observatory proxy automatically.
+Then use Claude, Codex, and other agents normally. Newly launched agents that
+honor standard proxy/trust environment variables route through the local
+Observatory proxy automatically.
 
-No wrapper command. No managed launch. No browser extension. No hosted account.
+No wrapper command in the primary flow. No managed launch. No browser extension.
+No hosted account.
 
 Remove everything:
 
@@ -160,7 +163,9 @@ That explicit local interception is what makes HTTPS body inspection possible.
 The install exports proxy environment variables for newly launched processes, so
 Observatory may receive non-agent HTTPS CONNECT traffic too. By default, it only
 terminates TLS for known LLM provider hosts and tunnels unrelated hosts without
-reading request bodies.
+reading request bodies. Install writes its managed shell block after any existing
+profile content, so it can override prior `HTTP_PROXY` / `HTTPS_PROXY` exports
+for new shells until `agents uninstall` removes the block.
 
 ```mermaid
 sequenceDiagram
@@ -232,7 +237,6 @@ be Developer ID signed and notarized first.
 - Verified capture requires explicit proxy/trust setup.
 - Antigravity transcript contents are discovery-only when stored in opaque `.pb`
   files.
-- GitHub Actions are pending until the publishing token can create workflows.
 - This release observes context. It does not yet manage canonical context
   upstream for every agent runtime.
 
@@ -241,7 +245,6 @@ be Developer ID signed and notarized first.
 | Next | Why it matters |
 | --- | --- |
 | Signed and notarized macOS release | Makes public binary distribution low-friction. |
-| GitHub CI | Gives every public commit a visible build/test signal. |
 | Short demo clip | Helps people understand the live feed before cloning. |
 | Broader runtime notes | Clarifies install-once capture behavior across agent stacks. |
 | Canonical context management | Turns the observatory into the control plane after observability proves demand. |
