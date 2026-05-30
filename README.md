@@ -155,9 +155,12 @@ covered by a looped fake-home QA harness.
 This is a local app. The engine binds to `127.0.0.1`; there is no hosted service
 and no cloud database.
 
-Yes, verified capture uses a local MITM hop between the agent process and
-Observatory. That explicit local interception is what makes HTTPS body
-inspection possible.
+Yes, verified capture uses a local MITM hop for inspected provider requests.
+That explicit local interception is what makes HTTPS body inspection possible.
+The install exports proxy environment variables for newly launched processes, so
+Observatory may receive non-agent HTTPS CONNECT traffic too. By default, it only
+terminates TLS for known LLM provider hosts and tunnels unrelated hosts without
+reading request bodies.
 
 ```mermaid
 sequenceDiagram
@@ -174,8 +177,10 @@ sequenceDiagram
 
 Important boundaries:
 
-- Observatory's CA is local to the agent-to-proxy leg.
+- Observatory's CA is local to the client-to-proxy leg for inspected hosts.
 - The CA is not installed into the macOS System keychain.
+- A stable CA certificate and private key are stored under Observatory's local
+  state directory so the ambient daemon can restart without breaking trust.
 - Upstream provider TLS still uses normal system trust.
 - Raw prompt bodies are not persisted.
 - Persisted capture state stores derived facts: prompt length, endpoint, and

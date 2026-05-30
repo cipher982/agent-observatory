@@ -46,9 +46,9 @@ type CA struct {
 	cache map[string]*tls.Certificate // host -> minted leaf
 }
 
-// NewCA generates a throwaway CA and writes its PEM to dir (so the child process
-// can trust it via NODE_EXTRA_CA_CERTS / SSL_CERT_FILE). The private key never
-// leaves memory.
+// NewCA generates a throwaway CA and writes only its certificate PEM to dir (so
+// a child process can trust it via NODE_EXTRA_CA_CERTS / SSL_CERT_FILE). In this
+// ephemeral mode, the private key never leaves memory.
 func NewCA(dir string, notBefore time.Time) (*CA, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

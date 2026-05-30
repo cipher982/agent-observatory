@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -32,6 +33,7 @@ type Proxy struct {
 	OnCapture func(Capture)
 
 	upstreamTLS *tls.Config
+	inspectHost func(host string) bool
 }
 
 // NewProxy builds an intercepting proxy backed by the given CA.
@@ -39,12 +41,28 @@ func NewProxy(ca *CA, logger *log.Logger) *Proxy {
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Proxy{ca: ca, logger: logger, upstreamTLS: &tls.Config{MinVersion: tls.VersionTLS12}}
+	return &Proxy{
+		ca:          ca,
+		logger:      logger,
+		upstreamTLS: &tls.Config{MinVersion: tls.VersionTLS12},
+		inspectHost: defaultInspectHost,
+	}
 }
 
 // SetUpstreamTLS overrides the TLS config used to dial real upstreams (default
 // uses the system root pool). Tests use this to trust a local self-signed server.
 func (p *Proxy) SetUpstreamTLS(cfg *tls.Config) { p.upstreamTLS = cfg }
+
+// SetInspectHost overrides which CONNECT hosts are locally TLS-inspected. The
+// default inspects known LLM provider endpoints and tunnels unrelated HTTPS
+// traffic without terminating TLS.
+func (p *Proxy) SetInspectHost(fn func(host string) bool) {
+	if fn == nil {
+		p.inspectHost = defaultInspectHost
+		return
+	}
+	p.inspectHost = fn
+}
 
 // ServeHTTP handles CONNECT (the only method agents use for HTTPS upstreams).
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +98,11 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	defer clientConn.Close()
 
+	if !p.inspectHost(host) {
+		p.tunnel(host, port, clientConn)
+		return
+	}
+
 	// Tell the client the tunnel is established, then do TLS as the server using
 	// a leaf cert for the requested host.
 	if _, err := clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
@@ -99,6 +122,27 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	// Read HTTP requests off the decrypted client connection, capture, forward.
 	p.pump(host, port, tlsConn)
+}
+
+func (p *Proxy) tunnel(host, port string, client net.Conn) {
+	upstream := &net.Dialer{Timeout: 15 * time.Second}
+	up, err := upstream.Dial("tcp", net.JoinHostPort(host, port))
+	if err != nil {
+		p.logger.Printf("[wire] tunnel dial %s:%s: %v", host, port, err)
+		writeBadGateway(client)
+		return
+	}
+	defer up.Close()
+	if _, err := client.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
+		return
+	}
+	done := make(chan struct{}, 1)
+	go func() {
+		_, _ = io.Copy(up, client)
+		done <- struct{}{}
+	}()
+	_, _ = io.Copy(client, up)
+	<-done
 }
 
 // pump reads requests from the (decrypted) client connection and proxies each to
@@ -201,6 +245,20 @@ func stripPort(hostport string) string {
 		return h
 	}
 	return hostport
+}
+
+func defaultInspectHost(host string) bool {
+	h := strings.TrimSuffix(strings.ToLower(host), ".")
+	switch {
+	case h == "api.openai.com", h == "api.anthropic.com":
+		return true
+	case strings.Contains(h, "bedrock-runtime.") && strings.HasSuffix(h, ".amazonaws.com"):
+		return true
+	case strings.HasPrefix(h, "aws-external-anthropic."):
+		return true
+	default:
+		return false
+	}
 }
 
 func (c Capture) summary() string {

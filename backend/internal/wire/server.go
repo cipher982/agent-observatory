@@ -83,6 +83,10 @@ func (s *Server) Subscribe() (<-chan Capture, func()) {
 // self-signed server; production uses system roots).
 func (s *Server) SetUpstreamTLS(cfg *tls.Config) { s.proxy.SetUpstreamTLS(cfg) }
 
+// SetInspectHost overrides the host inspection policy. Tests use this to inspect
+// localhost; production defaults to known LLM provider endpoints only.
+func (s *Server) SetInspectHost(fn func(host string) bool) { s.proxy.SetInspectHost(fn) }
+
 // SetSession sets the session id captures are attributed to (the managed launcher
 // supplies the agent's session id once known).
 func (s *Server) SetSession(id string) {

@@ -47,6 +47,7 @@ func TestNativeAnthropicPathThroughProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	srv.SetInspectHost(func(string) bool { return true })
 	upRoots := x509.NewCertPool()
 	upRoots.AddCert(upstream.Certificate())
 	srv.SetUpstreamTLS(&tls.Config{RootCAs: upRoots, MinVersion: tls.VersionTLS12})

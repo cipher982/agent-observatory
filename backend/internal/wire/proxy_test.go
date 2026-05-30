@@ -101,6 +101,7 @@ func TestEndToEndInterception(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	srv.SetInspectHost(func(string) bool { return true })
 	// Override leaf minting to use the upstream's hostname (127.0.0.1) so the
 	// client's SNI/cert check passes when we dial the real upstream below.
 	// The proxy must trust the (self-signed) test upstream when it forwards.
@@ -186,6 +187,54 @@ func TestEndToEndInterception(t *testing.T) {
 	// Verify the CA PEM was written for child-trust injection.
 	if _, err := os.Stat(srv.CAPath()); err != nil {
 		t.Errorf("CA pem not written: %v", err)
+	}
+}
+
+func TestNonProviderHostTunnelsWithoutCapture(t *testing.T) {
+	tmp := t.TempDir()
+	const reqBody = `{"system":"should stay opaque to proxy"}`
+	var gotUpstreamBody []byte
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUpstreamBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+	upURL, _ := url.Parse(upstream.URL)
+
+	srv, err := NewServer(tmp, log.New(io.Discard, "", 0), time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyAddr, err := srv.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(upstream.Certificate())
+	proxyURL, _ := url.Parse("http://" + proxyAddr)
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy:           http.ProxyURL(proxyURL),
+			TLSClientConfig: &tls.Config{RootCAs: roots},
+		},
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Post(upURL.String()+"/v1/messages", "application/json", bytes.NewReader([]byte(reqBody)))
+	if err != nil {
+		t.Fatalf("client through tunnel failed: %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+
+	if string(gotUpstreamBody) != reqBody {
+		t.Errorf("upstream body mismatch:\n got: %s\nwant: %s", gotUpstreamBody, reqBody)
+	}
+	if caps := srv.Captures(); len(caps) != 0 {
+		t.Fatalf("non-provider host should be tunneled without capture, got %+v", caps)
 	}
 }
 
