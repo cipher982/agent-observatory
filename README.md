@@ -1,145 +1,152 @@
 # Agent Context Observatory
 
-Makes agent context **observable**: which coding agents are running, what
-context/skills/tools each one *should* have (resolved), and what it *actually*
-assembled — confirmed at three escalating confidence tiers, with at-a-glance
-witness marks. Closes the gulf of evaluation: today agent context is implicit and
-you only notice it's wrong when an agent misbehaves.
+See what your coding agents actually received.
 
-## Architecture: headless engine + native frontend
+Agent Context Observatory is a local-first macOS app for inspecting the context
+assembled by tools like Codex, Claude, and Antigravity: instructions, skill
+activation, tool schemas, transcript evidence, and live outbound LLM requests.
 
+Today, agent context is mostly invisible. You find out it was wrong only after
+the agent misses a rule, lacks a tool, or quietly uses stale instructions. This
+app makes that state visible.
+
+![Live feed](docs/screenshots/v2-live-feed.png)
+
+## What It Shows
+
+- Recent local agent sessions from on-disk transcripts.
+- Expected instructions, skills, and tools for each workspace.
+- What was observed in transcripts.
+- What was verified on the wire through an explicit local proxy.
+- Drift: expected context that was missing.
+- Conflicts: cases where transcript and wire evidence disagree.
+- A realtime feed of agent requests as they leave the machine.
+
+## Quick Start
+
+Requirements:
+
+- macOS 26+
+- Xcode 26+
+- XcodeGen
+- Go 1.26+
+
+Build and run the app:
+
+```bash
+make app-build
+open /tmp/observatory-dd/Build/Products/Debug/Observatory.app
 ```
-┌──────────────────────────────┐        ┌──────────────────────────────┐
-│ backend/  (Go) — headless     │ HTTP   │ app/  (SwiftUI) — native      │
-│ resolver · transcript ·       │ JSON   │ macOS 26 Liquid Glass UI      │
-│ evidence · fact · wire        │ ─────▶ │ zero business logic           │
-│ `agents serve --port 7878`    │ :7878  │ renders fact-level marks      │
-└──────────────────────────────┘        └──────────────────────────────┘
-        └── same API also feeds the CLI (`agents sessions`) and curl
+
+The app opens in **Demo** mode by default so the live feed is immediately useful.
+Switch to **Live** in the toolbar to observe real local traffic.
+
+## Build Everything
+
+```bash
+make qa
 ```
 
-The Go engine is the single source of truth. The SwiftUI app, the CLI, and any
-other consumer render the same JSON. Concerns are separated: presentation polish
-never touches resolution/verification logic.
+This runs backend build, vet, unit tests, race tests, install lifecycle QA, and
+the macOS app build.
 
-## The fact-level evidence model
+## Release Artifact
 
-Confidence is a property of each **fact**, not a session. The resolver's
-expectation is the *claim under test*, not evidence:
-
-```
-EXPECTED   resolver says it SHOULD be present     (the claim — NOT evidence)
-OBSERVED   the CLI's transcript recorded it         (passive, every runtime)
-VERIFIED   captured on the wire, can't be faked      (managed launch, opt-in)
+```bash
+make release
 ```
 
-Each fact carries its **coverage** (complete | positive-only | heuristic | none),
-so a source that can only prove *presence* (Codex tools = invoked-only) never
-produces false "missing" drift. **CONFLICT** fires only when two complete-coverage
-sources disagree for the same request — the silent-regression alarm.
+Artifacts are written to `dist/`:
 
-## VERIFIED tier — working MITM for all three runtimes
+- `Agent-Context-Observatory-0.1.0-macos.zip`
+- `agents`
+- `SHA256SUMS`
 
-A TLS-terminating proxy (reached via `HTTPS_PROXY`, trusted per-launch via a
-throwaway CA — never the System keychain) reads the assembled system prompt +
-tool schema from the outbound request, then forwards it **byte-identical** so the
-agent keeps working. Proven live on this machine:
+## CLI
 
-| runtime | transport | result |
-|---|---|---|
-| **Codex** | Rust/rustls → `api.openai.com/v1/responses` | ✅ 41KB prompt, 22 tools |
-| **Claude (Bedrock)** | Node/Bun → `bedrock-runtime.*/model/.../invoke` | ✅ byte-identical forward preserves SigV4 (AWS accepts original signature, no re-signing, no creds in proxy) — 11 tools |
-| **Claude (Anthropic)** | Node/Bun → `api.anthropic.com/v1/messages` | ✅ identical mechanism (proxy test) |
-
-Antigravity (the Gemini-CLI successor) stores opaque/encrypted `.pb` transcripts,
-so it's **discovery-only** — sessions are surfaced, but context facts honestly
-report `coverage: none` rather than faking marks.
-
-## Backend (Go)
+The app bundles the Go engine, but the backend is also usable directly:
 
 ```bash
 cd backend
-make qa                                    # build + vet + tests + race
-go run ./cmd/agents sessions --limit 20    # live sessions + fact marks
-go run ./cmd/agents context explain ~/git/zerg
-go run ./cmd/agents doctor wire            # per-runtime wire capability report
-go run ./cmd/agents run codex exec "..."   # managed launch → VERIFIED capture
-go run ./cmd/agents serve --port 7878      # localhost JSON API for the app
+go run ./cmd/agents sessions --limit 20
+go run ./cmd/agents context explain ~/git/my-project
+go run ./cmd/agents monitor --demo
+go run ./cmd/agents doctor wire
 ```
 
-Endpoints: `GET /healthz`, `GET /api/sessions?limit=N`, `GET /api/explain?path=P`.
+## Real Capture
 
-`agents run <runtime>` is the OPT-IN path to VERIFIED: it owns the launch, sets up
-the proxy + scoped CA trust, correlates the capture, and persists only *derived*
-facts (length, marker, tool names) — never raw prompt bodies.
+There are two capture levels:
 
-## One-command ambient install (zero per-launch friction)
+- **Observed**: read from local CLI transcripts. Passive, no proxy required.
+- **Verified**: captured from outbound LLM requests through an explicit local
+  HTTPS proxy.
+
+For an opt-in one-off capture:
 
 ```bash
-agents install      # → start always-on proxy daemon (launchd) + stable CA
-                    #   + set HTTPS_PROXY + NODE_EXTRA_CA_CERTS + SSL_CERT_FILE
-                    #   + AWS_CA_BUNDLE globally (~/.zshenv + launchctl setenv)
-agents status       # show what's installed
-agents uninstall    # fully reverse it — system restored exactly
+cd backend
+go run ./cmd/agents monitor
 ```
 
-After `install`, **every newly-launched agent is auto-captured at the VERIFIED
-tier with no wrapper** — a fresh shell inherits the proxy + CA-trust env, and the
-launchd daemon is always listening. Proven on a real machine: a clean
-`zsh -lic 'claude -p ...'` (no wrapper, no manual env) was captured live as
-`bedrock-runtime.../invoke-with-response-stream → 5548 chars, 11 tools`; a
-subsequent `uninstall` left `~/.zshenv`, launchd, ports, and CA with **zero
-residue**.
+The monitor prints the proxy and CA environment variables for a shell-launched
+agent.
 
-Properties (all covered by `make qa`'s looped install harness):
-- **Idempotent** — re-installing replaces one fenced `~/.zshenv` block, never duplicates.
-- **Reversible** — uninstall restores the profile byte-for-byte (sentinel-fenced block), unloads the daemon, unsets env, deletes the CA.
-- **Partial-state safe** — uninstall cleans up whatever exists.
-- **Trust stays scoped** — CA is trusted via env vars, never the System keychain.
-- Already-running shells aren't captured until restarted (expected).
-
-The installer is fully root-configurable (`internal/install.Target`), so the QA
-harness runs install→verify→uninstall→assert-clean in throwaway fake-HOME roots
-with a stubbed launchctl — never touching the real shell.
-
-## Realtime monitor + live GUI
-
-`agents monitor` runs the JSON API, an always-on intercepting proxy, AND a
-Server-Sent-Events stream (`/api/stream`) of in-flight LLM requests. The native
-app launches it and renders a **live activity feed**: each outbound request blooms
-in as a Liquid Glass card the instant it crosses the wire (`GlassEffectContainer`
-+ `.materialize` transition), over an animated `MeshGradient` hero extended under
-the chrome via `backgroundExtensionEffect`, with a breathing LIVE heartbeat,
-`scrollEdgeEffectStyle`, and `safeAreaBar` chrome. Proven live: agent fires →
-wire capture → SSE → card materializes. Screenshots: `docs/screenshots/v2-live-*`.
+For ambient capture of newly launched agents:
 
 ```bash
-go run ./cmd/agents monitor   # API+stream :7878, proxy :7879
-# then launch any agent through the printed HTTPS_PROXY + CA env, or `agents run`
+agents install
+agents status
+agents uninstall
 ```
 
-## Native app (SwiftUI, macOS 26)
+Ambient install sets a local launchd daemon, a local CA, and shell environment
+variables. Uninstall reverses the setup and is covered by a looped fake-home QA
+harness.
 
-Requires **Xcode 26+** and **macOS 26** (Liquid Glass APIs).
+## Security Model
+
+This is a local app. The engine binds to `127.0.0.1`; there is no hosted service
+and no cloud database.
+
+The wire proxy is explicit. It exists because HTTPS request bodies cannot be
+passively inspected. Verified capture requires routing traffic through the local
+proxy and trusting the local CA for that process or ambient install.
+
+Persisted capture state stores derived facts such as prompt length, marker
+presence, endpoint, and tool names. Raw prompt bodies are not persisted.
+
+## Architecture
+
+```text
+SwiftUI app
+  -> bundled Go engine
+      -> transcript discovery
+      -> context resolver
+      -> fact/evidence model
+      -> localhost JSON API
+      -> SSE live stream
+      -> optional HTTPS proxy
+```
+
+The backend is the source of truth. The app, CLI, and API all render the same
+fact-level model.
+
+## Current Limitations
+
+- macOS 26 and Xcode 26 are required for the Liquid Glass SwiftUI surface.
+- Verified capture requires explicit proxy/trust setup.
+- Antigravity transcript contents are discovery-only when stored in opaque `.pb`
+  files.
+- This release observes context. It does not yet manage canonical context
+  upstream for every agent runtime.
+
+## Development
 
 ```bash
-cd app
-xcodegen generate
-open Observatory.xcodeproj          # ⌘R
-# or headless:
-xcodebuild -project Observatory.xcodeproj -scheme Observatory \
-  -configuration Debug -derivedDataPath /tmp/obs-dd build
-open /tmp/obs-dd/Build/Products/Debug/Observatory.app
+make backend-qa
+make app-build
+make release
 ```
 
-The app bundles the Go engine into `Observatory.app/Contents/Resources/agents`,
-spawns it on launch, polls `/api/sessions`, and renders per-fact witness marks
-with their tier (verified/observed), a red **drift** card, and a purple
-**CONFLICT** card. Screenshots in `docs/screenshots/`.
-
-## Provenance
-
-Design history + three first-principles reviews (Codex fact-model, Codex
-seamlessness, SigV4/keylog research) live in
-`~/git/me/research/2026-05-28-agent-context-observability-design-journey.md` and
-the v2 docket item under `~/git/me/docket`.
+The release source of truth is `docs/specs/release-readiness.md`.

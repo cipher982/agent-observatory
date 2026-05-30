@@ -50,13 +50,13 @@ func runInstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "install failed: %v\n", err)
 		return 1
 	}
-	fmt.Println("✅ Agent Observatory installed.")
+	fmt.Println("Agent Observatory installed.")
 	fmt.Println()
-	fmt.Println("  • always-on proxy daemon (launchd):", t.PlistPathPublic())
-	fmt.Println("  • stable CA:", t.CAPEMPublic())
-	fmt.Println("  • global env set in", t.ProfilePath, "+ launchctl setenv")
+	fmt.Println("  local proxy daemon:", t.PlistPathPublic())
+	fmt.Println("  local CA:", t.CAPEMPublic())
+	fmt.Println("  shell environment:", t.ProfilePath, "+ launchctl setenv")
 	fmt.Println()
-	fmt.Println("Open a NEW terminal (or new agent) and it's auto-captured — no wrapper.")
+	fmt.Println("New terminals and newly launched agents will route through the local proxy.")
 	fmt.Println("Already-running shells won't be captured until restarted.")
 	fmt.Println("Remove everything with:  agents uninstall")
 	return 0
@@ -72,7 +72,7 @@ func runUninstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "uninstall completed with issues: %v\n", err)
 		return 1
 	}
-	fmt.Println("✅ Agent Observatory uninstalled — system restored.")
+	fmt.Println("Agent Observatory uninstalled. System state restored.")
 	fmt.Println("Open a new terminal for the env changes to clear.")
 	return 0
 }
@@ -102,9 +102,11 @@ func runStatus(args []string) int {
 		}
 	}
 	if s.Installed {
-		fmt.Println("\noverall: installed ✅")
+		fmt.Println("\noverall: installed")
+		fmt.Println("new agents should be captured at the verified tier")
 		return 0
 	}
 	fmt.Println("\noverall: not fully installed")
+	fmt.Println("run `agents install` for ambient capture, or use `agents monitor` for a one-off proxy")
 	return 1
 }
