@@ -15,8 +15,7 @@ import (
 )
 
 // Server runs the intercepting proxy on a loopback port and accumulates the
-// VERIFIED observations it captures, keyed by a session id supplied by the
-// managed launcher (via correlation). Until per-request session correlation is
+// VERIFIED observations it captures. Until per-request session correlation is
 // wired, captures are stored under a single active session id.
 type Server struct {
 	proxy *Proxy
@@ -87,8 +86,7 @@ func (s *Server) SetUpstreamTLS(cfg *tls.Config) { s.proxy.SetUpstreamTLS(cfg) }
 // localhost; production defaults to known LLM provider endpoints only.
 func (s *Server) SetInspectHost(fn func(host string) bool) { s.proxy.SetInspectHost(fn) }
 
-// SetSession sets the session id captures are attributed to (the managed launcher
-// supplies the agent's session id once known).
+// SetSession sets the session id captures are attributed to.
 func (s *Server) SetSession(id string) {
 	s.mu.Lock()
 	s.sessionID = id

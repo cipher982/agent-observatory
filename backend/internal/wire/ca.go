@@ -6,7 +6,7 @@
 //   - All three target runtimes honor HTTPS_PROXY: Claude Code (Bun/Node, also
 //     honors NODE_EXTRA_CA_CERTS), Codex (Rust/rustls, honors HTTPS_PROXY +
 //     SSL_CERT_FILE), and Claude-on-Bedrock (same Node stack → bedrock-runtime).
-//   - Trust is scoped to the managed-launch child via NODE_EXTRA_CA_CERTS /
+//   - Trust is scoped to Observatory-aware processes via NODE_EXTRA_CA_CERTS /
 //     SSL_CERT_FILE / AWS_CA_BUNDLE — NEVER installed in the System keychain.
 //   - SigV4: for Bedrock we forward the body byte-identical, preserving every
 //     signed canonical element, so the original signature still validates (no
@@ -33,9 +33,10 @@ import (
 	"time"
 )
 
-// CA is an ephemeral certificate authority used to mint per-host leaf certs for
-// TLS interception. It is created fresh per managed-launch session and its cert
-// is trusted ONLY by the launched child (via env), never system-wide.
+// CA is a certificate authority used to mint per-host leaf certs for TLS
+// interception. Ephemeral run modes keep it in memory; ambient install persists
+// it under Observatory's state dir. Its cert is trusted only through injected
+// process env, never system-wide.
 type CA struct {
 	cert    *x509.Certificate
 	key     *ecdsa.PrivateKey
