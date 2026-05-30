@@ -13,7 +13,7 @@ func TestConflictE2E(t *testing.T) {
 	instructions := FactKey{Kind: InstructionText, Runtime: "claude", Name: "AGENTS.md global instructions"}
 	ep := Epoch{SessionID: "s1"}
 
-	// Transcript recorded the instructions present; wire proves them absent on the wire.
+	// Transcript recorded required instructions; wire proves they were absent on the wire.
 	// (The regression class: the CLI's own record disagrees with what left the box.)
 	results := Merge(
 		[]Expectation{{Key: instructions, Required: true, Origin: "global"}},
