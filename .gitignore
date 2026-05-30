@@ -1,6 +1,5 @@
 # Go build artifacts
 /backend/agents
-backend/agents
 /app/agents
 /dist/
 
@@ -11,4 +10,4 @@ DerivedData/
 xcuserdata/
 
 # wire capture state (derived facts; still local-only)
-backend/agents
+backend/.observatory/

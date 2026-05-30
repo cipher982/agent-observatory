@@ -67,7 +67,7 @@ func TestNativeAnthropicPathThroughProxy(t *testing.T) {
 
 	req, _ := http.NewRequest("POST", "https://"+upHost+":"+upPort+"/v1/messages", bytes.NewReader([]byte(reqBody)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", "sk-ant-fake")
+	req.Header.Set("x-api-key", "dummy-test-key")
 	req.Header.Set("anthropic-version", "2023-06-01")
 	resp, err := client.Do(req)
 	if err != nil {
