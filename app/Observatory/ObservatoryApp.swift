@@ -16,7 +16,7 @@ struct ObservatoryApp: App {
             ObservatoryMenuBarView()
                 .environment(engine)
         } label: {
-            Image(systemName: engine.streamConnected ? "dot.radiowaves.left.and.right" : "waveform.path.ecg")
+            MenuBarDomeIcon(degraded: !engine.streamConnected)
         }
         .menuBarExtraStyle(.menu)
     }

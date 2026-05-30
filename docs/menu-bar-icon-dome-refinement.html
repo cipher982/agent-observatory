@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Observatory Dome Refinement</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090d13;
+      --panel: #141923;
+      --line: rgba(255,255,255,.12);
+      --text: #eef4ff;
+      --muted: #9aa6b7;
+      --red: #ff453a;
+      --teal: #46f1d3;
+      --blue: #55c8ff;
+      --violet: #a78bfa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(circle at 18% 8%, rgba(70,241,211,.12), transparent 24rem),
+        radial-gradient(circle at 82% 12%, rgba(167,139,250,.12), transparent 30rem),
+        linear-gradient(180deg, #111827 0%, var(--bg) 62%, #06080c 100%);
+    }
+
+    main {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 38px 40px 64px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.08;
+      font-weight: 760;
+    }
+
+    .lede {
+      max-width: 790px;
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .rules {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 10px;
+      color: #c7cfde;
+      background: rgba(255,255,255,.045);
+      white-space: nowrap;
+    }
+
+    .menubar {
+      height: 44px;
+      border: 1px solid rgba(255,255,255,.17);
+      border-radius: 14px;
+      background: rgba(238,244,255,.84);
+      color: #11151d;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 18px;
+      padding: 0 14px;
+      margin-bottom: 18px;
+      box-shadow: 0 24px 70px rgba(0,0,0,.34);
+    }
+
+    .menubar.dark {
+      background: rgba(23,27,36,.9);
+      color: #f7f9ff;
+      margin-bottom: 28px;
+    }
+
+    .menu-left,
+    .menu-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .fake { opacity: .68; }
+
+    .slot,
+    .state-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      position: relative;
+    }
+
+    .slot.active { background: rgba(0,0,0,.12); }
+    .dark .slot.active { background: rgba(255,255,255,.12); }
+
+    .dot {
+      position: absolute;
+      right: 1px;
+      top: 1px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 0 1px rgba(0,0,0,.42);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.14fr 1fr 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.035));
+    }
+
+    .lead {
+      border-color: rgba(70,241,211,.38);
+      box-shadow: 0 0 0 1px rgba(70,241,211,.08), 0 26px 80px rgba(0,0,0,.22);
+    }
+
+    .card-head {
+      min-height: 126px;
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.18;
+      font-weight: 740;
+    }
+
+    .tagline {
+      margin: 6px 0 0;
+      color: var(--muted);
+    }
+
+    .label {
+      display: inline-flex;
+      margin-top: 10px;
+      border-radius: 999px;
+      padding: 4px 7px;
+      color: #9cfbea;
+      background: rgba(70,241,211,.1);
+      font-size: 12px;
+    }
+
+    .preview {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .cell {
+      min-height: 136px;
+      display: grid;
+      place-items: center;
+    }
+
+    .cell.light {
+      color: #171a22;
+      background: #eef2f7;
+    }
+
+    .cell.dark {
+      color: #f7f9ff;
+      background: #171b24;
+    }
+
+    .sizes {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 14px;
+      background: #0f141d;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .state {
+      display: flex;
+      justify-content: center;
+      gap: 22px;
+      padding: 12px 14px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .notes {
+      min-height: 112px;
+      padding: 13px 14px 15px;
+      color: #bec8d7;
+    }
+
+    .notes strong { color: var(--text); }
+
+    svg.icon {
+      width: var(--s);
+      height: var(--s);
+      display: block;
+      overflow: visible;
+    }
+
+    .fill { fill: currentColor; }
+
+    @media (max-width: 980px) {
+      header { grid-template-columns: 1fr; }
+      .rules { justify-content: flex-start; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Observatory Dome refinement</h1>
+        <p class="lede">The direction is now a custom observatory dome. These variants test the details that matter: silhouette height, base weight, and whether the aperture cutout survives at menu-bar size.</p>
+      </div>
+      <div class="rules">
+        <span class="pill">lead: balanced dome</span>
+        <span class="pill">transparent cutouts</span>
+        <span class="pill">red dot degraded state</span>
+        <span class="pill">Dock icon can reuse geometry</span>
+      </div>
+    </header>
+
+    <section class="menubar">
+      <div class="menu-left"><strong>Observatory</strong><span class="fake">File</span><span class="fake">Edit</span><span class="fake">View</span></div>
+      <div></div>
+      <div class="menu-right">
+        <span class="slot active"><svg class="icon" style="--s:20px"><use href="#dome-balanced"></use></svg></span>
+        <span class="slot"><svg class="icon" style="--s:20px"><use href="#dome-balanced"></use></svg><i class="dot"></i></span>
+        <span class="slot"><svg class="icon" style="--s:20px"><use href="#dome-tall"></use></svg></span>
+        <span class="slot"><svg class="icon" style="--s:20px"><use href="#dome-low"></use></svg></span>
+        <span class="fake">Wi-Fi</span><span class="fake">Search</span>
+      </div>
+    </section>
+
+    <section class="menubar dark">
+      <div class="menu-left"><strong>Observatory</strong><span class="fake">File</span><span class="fake">Edit</span><span class="fake">View</span></div>
+      <div></div>
+      <div class="menu-right">
+        <span class="slot active"><svg class="icon" style="--s:20px"><use href="#dome-balanced"></use></svg></span>
+        <span class="slot"><svg class="icon" style="--s:20px"><use href="#dome-balanced"></use></svg><i class="dot"></i></span>
+        <span class="slot"><svg class="icon" style="--s:20px"><use href="#dome-tall"></use></svg></span>
+        <span class="slot"><svg class="icon" style="--s:20px"><use href="#dome-low"></use></svg></span>
+        <span class="fake">Wi-Fi</span><span class="fake">Search</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card lead">
+        <div class="card-head">
+          <h2>1. Balanced Dome</h2>
+          <p class="tagline">Detached foundation, balanced dome, and one clear angled aperture cut.</p>
+          <span class="label">recommended</span>
+        </div>
+        <div class="preview">
+          <div class="cell light"><svg class="icon" style="--s:26px"><use href="#dome-balanced"></use></svg></div>
+          <div class="cell dark"><svg class="icon" style="--s:26px"><use href="#dome-balanced"></use></svg></div>
+        </div>
+        <div class="sizes">
+          <svg class="icon" style="--s:16px"><use href="#dome-balanced"></use></svg>
+          <svg class="icon" style="--s:18px"><use href="#dome-balanced"></use></svg>
+          <svg class="icon" style="--s:22px"><use href="#dome-balanced"></use></svg>
+          <svg class="icon" style="--s:58px; color:var(--teal)"><use href="#dome-balanced"></use></svg>
+        </div>
+        <div class="state">
+          <span class="state-icon"><svg class="icon" style="--s:20px"><use href="#dome-balanced"></use></svg></span>
+          <span class="state-icon"><svg class="icon" style="--s:20px"><use href="#dome-balanced"></use></svg><i class="dot"></i></span>
+        </div>
+        <p class="notes"><strong>Why:</strong> the base gap makes this read as a building instead of a helmet. The off-center wedge gives the dome its observatory identity without adding fragile detail.</p>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>2. Tall Dome</h2>
+          <p class="tagline">Same detached foundation, taller roof, more literal profile.</p>
+          <span class="label">more pictorial</span>
+        </div>
+        <div class="preview">
+          <div class="cell light"><svg class="icon" style="--s:26px"><use href="#dome-tall"></use></svg></div>
+          <div class="cell dark"><svg class="icon" style="--s:26px"><use href="#dome-tall"></use></svg></div>
+        </div>
+        <div class="sizes">
+          <svg class="icon" style="--s:16px"><use href="#dome-tall"></use></svg>
+          <svg class="icon" style="--s:18px"><use href="#dome-tall"></use></svg>
+          <svg class="icon" style="--s:22px"><use href="#dome-tall"></use></svg>
+          <svg class="icon" style="--s:58px; color:var(--blue)"><use href="#dome-tall"></use></svg>
+        </div>
+        <div class="state">
+          <span class="state-icon"><svg class="icon" style="--s:20px"><use href="#dome-tall"></use></svg></span>
+          <span class="state-icon"><svg class="icon" style="--s:20px"><use href="#dome-tall"></use></svg><i class="dot"></i></span>
+        </div>
+        <p class="notes"><strong>Tradeoff:</strong> stronger pictorial read, but it gets top-heavy and begins to resemble a bell at tiny size.</p>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>3. Low Dome</h2>
+          <p class="tagline">Flatter roof and detached foundation for maximum menu-bar stability.</p>
+          <span class="label">simplest tiny read</span>
+        </div>
+        <div class="preview">
+          <div class="cell light"><svg class="icon" style="--s:26px"><use href="#dome-low"></use></svg></div>
+          <div class="cell dark"><svg class="icon" style="--s:26px"><use href="#dome-low"></use></svg></div>
+        </div>
+        <div class="sizes">
+          <svg class="icon" style="--s:16px"><use href="#dome-low"></use></svg>
+          <svg class="icon" style="--s:18px"><use href="#dome-low"></use></svg>
+          <svg class="icon" style="--s:22px"><use href="#dome-low"></use></svg>
+          <svg class="icon" style="--s:58px; color:var(--violet)"><use href="#dome-low"></use></svg>
+        </div>
+        <div class="state">
+          <span class="state-icon"><svg class="icon" style="--s:20px"><use href="#dome-low"></use></svg></span>
+          <span class="state-icon"><svg class="icon" style="--s:20px"><use href="#dome-low"></use></svg><i class="dot"></i></span>
+        </div>
+        <p class="notes"><strong>Tradeoff:</strong> easiest to read, but least distinct. It starts to feel like an icon for a generic dashboard rather than an observatory.</p>
+      </article>
+    </section>
+  </main>
+
+  <svg width="0" height="0" aria-hidden="true" focusable="false">
+    <symbol id="dome-balanced" viewBox="0 0 32 32">
+      <path class="fill" fill-rule="evenodd" d="
+        M4.5 24h23v2.4h-23V24Z
+        M7 22.2C7 14 11 9.8 16 9.8s9 4.2 9 12.4H7Z
+        M16.5 10.9c2.5.7 4.1 3 4.7 6.9l-5.6 1.2.9-8.1Z"/>
+    </symbol>
+
+    <symbol id="dome-tall" viewBox="0 0 32 32">
+      <path class="fill" fill-rule="evenodd" d="
+        M5.2 24h21.6v2.35H5.2V24Z
+        M7.7 22.15C7.92 13.7 11.75 8.7 16 8.7s8.08 5 8.3 13.45H7.7Z
+        M16.45 10.25c2.2.7 3.65 2.85 4.3 6.45l-5.05 1.05.75-7.5Z"/>
+    </symbol>
+
+    <symbol id="dome-low" viewBox="0 0 32 32">
+      <path class="fill" fill-rule="evenodd" d="
+        M4.5 24h23v2.45h-23V24Z
+        M6.7 22.15c.78-6.6 4.35-10.35 9.3-10.35s8.52 3.75 9.3 10.35H6.7Z
+        M16.65 12.7c2.05.55 3.35 2.15 3.9 4.75l-4.8 1 .9-5.75Z"/>
+    </symbol>
+  </svg>
+</body>
+</html>
