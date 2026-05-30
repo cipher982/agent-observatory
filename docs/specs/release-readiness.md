@@ -94,6 +94,8 @@ Revisit if: Distribution friction on macOS 26 blocks broad testing.
 
 ### Phase 0: Repo And Spec
 
+Status: complete
+
 Acceptance criteria:
 - Git repository initialized.
 - Generated app/backend binaries ignored.
@@ -101,11 +103,18 @@ Acceptance criteria:
 
 ### Phase 1: Baseline QA
 
+Status: complete
+
 Acceptance criteria:
 - Backend `make qa` passes.
 - Xcode project generation works.
 - macOS app Debug build succeeds from CLI.
 - Known failures are documented as release blockers, not left implicit.
+
+Verification:
+- `cd backend && make qa` passed.
+- `cd app && xcodegen generate` passed.
+- `xcodebuild -project Observatory.xcodeproj -scheme Observatory -configuration Debug -derivedDataPath /tmp/observatory-dd build` passed.
 
 ### Phase 2: Product Onboarding And Demo
 
