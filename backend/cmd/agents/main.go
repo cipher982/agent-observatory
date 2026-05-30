@@ -22,8 +22,8 @@ import (
 )
 
 func main() {
-	// Fold any persisted `agents run` wire captures into the fact pipeline as
-	// VERIFIED evidence (no-op when none exist).
+	// Fold persisted wire captures into the fact pipeline as VERIFIED evidence
+	// (no-op when none exist).
 	installWireObservations()
 
 	args := os.Args[1:]
@@ -79,10 +79,10 @@ Usage:
   agents serve [--port N] [--limit N]      localhost JSON API
   agents sessions [--json] [--limit N]     live sessions + evidence marks
   agents context explain [path] [--json]   resolved context for a path
-  agents run <runtime> [args...]           managed launch → VERIFIED wire capture
   agents doctor wire                       per-runtime wire-capability report
 
-After 'agents install', every newly-launched agent is auto-captured — no wrapper.
+After 'agents install', use your agents normally. Newly launched agents are
+captured automatically — no wrapper or managed launch.
 The SwiftUI app and CLI all consume the same engine.
 `)
 }

@@ -16,8 +16,8 @@ import (
 
 // runMonitor runs the realtime monitor: the JSON API + the live SSE stream + an
 // always-on intercepting proxy. The GUI connects to /api/stream and shows
-// in-flight LLM requests the instant they're captured. Launch agents through the
-// printed HTTPS_PROXY (or use `agents run`, which wires it automatically).
+// in-flight LLM requests the instant they're captured. In the product path this
+// is started by `agents install`; direct use is mainly diagnostic/development.
 func runMonitor(args []string) int {
 	var (
 		apiPort   int
@@ -89,7 +89,7 @@ func runMonitor(args []string) int {
 	})
 	// The realtime stream: Server-Sent Events of live wire captures.
 	mux.HandleFunc("/api/stream", live.handleSSE)
-	// Proxy coordinates so the GUI can show "launch through me" and trust setup.
+	// Proxy coordinates so the GUI can show install/trust state.
 	mux.HandleFunc("/api/proxy", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{
 			"httpsProxy": "http://" + proxyAddr,
@@ -105,10 +105,12 @@ func runMonitor(args []string) int {
 	fmt.Printf("agents monitor:\n")
 	fmt.Printf("  API + live stream : http://%s  (/api/sessions /api/stream)\n", ln.Addr())
 	fmt.Printf("  intercepting proxy: http://%s\n", proxyAddr)
-	fmt.Printf("  CA (per-launch)   : %s\n", srv.CAPath())
-	fmt.Printf("\nLaunch agents through the proxy to see live VERIFIED requests:\n")
-	fmt.Printf("  HTTPS_PROXY=http://%s NODE_EXTRA_CA_CERTS=%s SSL_CERT_FILE=%s claude -p ...\n", proxyAddr, srv.CAPath(), srv.CAPath())
-	fmt.Printf("  (or simply: agents run claude ... — but monitor keeps the stream alive)\n")
+	fmt.Printf("  local CA          : %s\n", srv.CAPath())
+	if caDir == "" {
+		fmt.Printf("\nDiagnostic mode. For normal use, run `agents install` once and then use agents normally.\n")
+	} else {
+		fmt.Printf("\nInstalled mode. Newly launched agents should be captured automatically.\n")
+	}
 
 	httpSrv := &http.Server{Handler: withCORS(mux), ReadHeaderTimeout: 5 * time.Second}
 	if err := httpSrv.Serve(ln); err != nil {

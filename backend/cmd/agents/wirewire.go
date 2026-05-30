@@ -11,14 +11,14 @@ import (
 	"github.com/cipher982/agent-observatory/backend/internal/wire"
 )
 
-// installWireObservations wires persisted `agents run` captures into the
-// observatory as VERIFIED evidence. Captures are stored per-runtime under the
-// state dir; here we expose them to the fact pipeline keyed by session.
+// installWireObservations wires persisted captures into the observatory as
+// VERIFIED evidence. Captures are stored per-runtime under the state dir; here
+// we expose them to the fact pipeline keyed by session.
 //
-// v2 correlation is coarse: captures from the most recent `agents run <runtime>`
-// are attributed to that runtime's most-recent session. Per-request session
-// correlation is a refinement; this is enough to surface real VERIFIED facts and
-// to demonstrate CONFLICT against the transcript.
+// v2 correlation is coarse: captures from the most recent runtime capture are
+// attributed to that runtime's most-recent session. Per-request session
+// correlation is a refinement; this is enough to surface real VERIFIED facts
+// and to demonstrate CONFLICT against the transcript.
 func installWireObservations() {
 	observatory.WireObservations = func(sessionID string) []fact.Observation {
 		// We don't know the runtime from sessionID alone here, so scan all

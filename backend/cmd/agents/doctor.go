@@ -59,9 +59,9 @@ func runDoctor(args []string) int {
 		fmt.Println()
 	}
 
-	fmt.Println("All three honor HTTPS_PROXY; trust is injected per-launch via")
-	fmt.Println("NODE_EXTRA_CA_CERTS / SSL_CERT_FILE / AWS_CA_BUNDLE (never the System keychain).")
-	fmt.Println("Run:  agents run <runtime> [args...]   to capture VERIFIED facts.")
+	fmt.Println("After `agents install`, newly launched agents route through Observatory automatically.")
+	fmt.Println("Trust is injected through NODE_EXTRA_CA_CERTS / SSL_CERT_FILE / AWS_CA_BUNDLE,")
+	fmt.Println("never by installing Observatory's CA into the macOS System keychain.")
 	return 0
 }
 

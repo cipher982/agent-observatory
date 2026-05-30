@@ -8,10 +8,12 @@ The problem is simple: agent context is invisible until it fails. If a coding
 agent misses a repo rule or silently lacks a tool, there is usually no debugger
 for the assembled prompt/tool state. This app makes that state inspectable.
 
-The first release is local-first. It reads local transcripts passively, can verify
-outbound requests through an explicit local proxy, and stores only derived facts
-instead of raw prompt bodies. The native app includes a demo mode so the product
-is visible immediately, then a live mode for real local traffic.
+The first release is local-first. It reads local transcripts passively, verifies
+outbound requests through an install-once local proxy, and stores only derived
+facts instead of raw prompt bodies. After install, people use their agents
+normally; there is no wrapper command or hosted account in the primary flow. The
+native app includes a demo mode so the product is visible immediately, then a
+live mode for real local traffic.
 
 What is included:
 

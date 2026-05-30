@@ -103,10 +103,10 @@ func runStatus(args []string) int {
 	}
 	if s.Installed {
 		fmt.Println("\noverall: installed")
-		fmt.Println("new agents should be captured at the verified tier")
+		fmt.Println("newly launched agents should be captured at the verified tier")
 		return 0
 	}
 	fmt.Println("\noverall: not fully installed")
-	fmt.Println("run `agents install` for ambient capture, or use `agents monitor` for a one-off proxy")
+	fmt.Println("run `agents install` to capture newly launched agents automatically")
 	return 1
 }

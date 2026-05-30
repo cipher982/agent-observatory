@@ -80,42 +80,44 @@ go run ./cmd/agents doctor wire
 
 ## Real Capture
 
-There are two capture levels:
+There are two evidence levels:
 
 - **Observed**: read from local CLI transcripts. Passive, no proxy required.
 - **Verified**: captured from outbound LLM requests through an explicit local
   HTTPS proxy.
 
-For an opt-in one-off capture:
-
-```bash
-cd backend
-go run ./cmd/agents monitor
-```
-
-The monitor prints the proxy and CA environment variables for a shell-launched
-agent.
-
-For ambient capture of newly launched agents:
+For real verified capture, install once:
 
 ```bash
 agents install
 agents status
+```
+
+After install, use Claude, Codex, and other agents normally. Newly launched
+agents route through the local Observatory proxy automatically. No wrapper
+command, managed launch, browser extension, or hosted account is required.
+
+To remove the setup:
+
+```bash
 agents uninstall
 ```
 
-Ambient install sets a local launchd daemon, a local CA, and shell environment
-variables. Uninstall reverses the setup and is covered by a looped fake-home QA
-harness.
+Install sets a local launchd daemon, a local CA, and the process environment
+needed by newly launched agents. Uninstall reverses the setup and is covered by
+a looped fake-home QA harness.
 
 ## Security Model
 
 This is a local app. The engine binds to `127.0.0.1`; there is no hosted service
 and no cloud database.
 
-The wire proxy is explicit. It exists because HTTPS request bodies cannot be
-passively inspected. Verified capture requires routing traffic through the local
-proxy and trusting the local CA for that process or ambient install.
+Verified capture exists because HTTPS request bodies cannot be passively
+inspected. Observatory creates its own local CA for the agent-to-proxy leg and
+injects trust through agent process environment variables. It does not install
+that CA into the macOS System keychain. The proxy's upstream connection to
+OpenAI, Anthropic, Bedrock, and other providers uses the normal system trust
+store.
 
 Persisted capture state stores derived facts such as prompt length, marker
 presence, endpoint, and tool names. Raw prompt bodies are not persisted.

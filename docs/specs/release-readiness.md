@@ -10,9 +10,10 @@ what instructions, skills, tools, and context did it actually receive?
 
 The release target is a polished local app that a technical user can install,
 understand in under two minutes, and use to see real or demo agent traffic without
-reading implementation notes. The backend remains the source of truth; the native
-app is the primary experience; docs and release artifacts make it credible enough
-for public scrutiny.
+reading implementation notes. Real capture is install-once: after setup, users run
+their agents normally. The backend remains the source of truth; the native app is
+the primary experience; docs and release artifacts make it credible enough for
+public scrutiny.
 
 ## Success Criteria
 
@@ -23,9 +24,11 @@ for public scrutiny.
   status/actions.
 - Demo mode produces a visually compelling, deterministic live feed suitable for
   screenshots and a short launch video.
-- Real mode can show current local agent sessions and live proxy captures.
+- Real mode can show current local agent sessions and live proxy captures after
+  one install command, with no wrapper or managed launch in the primary flow.
 - Install, status, and uninstall flows are safe, reversible, and explained in
-  product language with the security model stated plainly.
+  product language with the zero-wrapper capture model and security model stated
+  plainly.
 - Backend QA passes: build, vet, unit tests, race tests, and install lifecycle.
 - App QA passes: project generation, Debug build, launched app smoke test, and
   screenshot verification.
@@ -55,7 +58,8 @@ for public scrutiny.
 Context: The product inspects agent prompts and tool schemas, which can be
 sensitive.
 
-Choice: Ship as a local-only app with a localhost engine and local capture state.
+Choice: Ship as a local-only app with a localhost engine, local capture state,
+and an install-once ambient capture path.
 
 Rationale: Hacker News users will trust a transparent local tool faster than an
 opaque hosted service for this category.
@@ -159,7 +163,8 @@ Status: complete
 Acceptance criteria:
 - README clearly explains what is captured, what is never persisted, how proxy
   trust works, and how uninstall restores state.
-- CLI status explains install state and next action in plain language.
+- CLI status explains install state and the next action in plain language, with
+  `agents install` as the mainline path.
 - Install/uninstall QA remains green.
 
 Verification:
