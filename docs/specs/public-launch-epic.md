@@ -203,7 +203,7 @@ Verification:
 
 ### Phase 5: Distribution Readiness
 
-Status: pending
+Status: complete for source/ad-hoc release; blocked for notarized binary distribution
 
 Acceptance:
 - `make release` creates zip, CLI binary, and checksums.
@@ -217,6 +217,15 @@ Verification:
 - `make release`
 - `gh repo view`
 - GitHub workflow push if token scope is updated.
+- Latest local release checksums:
+  - `9ccd2242ae321664e60e6449338359b1ce0e432cd644732df9c54723ef3781ce  Agent-Context-Observatory-0.1.0-macos.zip`
+  - `e2c0e01f055875088d502d7bf54bf07d7da714ad3cdbd1643bba5c6df5eb8bc1  agents`
+
+External blockers:
+- Developer ID Application certificate and notarization credentials are required
+  before a broad public binary download.
+- GitHub workflow creation still requires a publishing token with `workflow`
+  scope.
 
 ### Phase 6: Final Launch Review
 

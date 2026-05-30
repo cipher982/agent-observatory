@@ -1,6 +1,6 @@
 # Agent Context Observatory Release Readiness
 
-Status: source-release ready; public binary release still needs notarization
+Status: source/ad-hoc release ready; public binary release still needs notarization
 Target: Hacker News-ready local-first macOS developer app
 
 ## Executive Summary
@@ -173,7 +173,7 @@ Verification:
 
 ### Phase 5: Final Release QA
 
-Status: complete for source release; public visual assets need a fresh sanitized capture
+Status: complete for source/ad-hoc release
 
 Acceptance criteria:
 - Backend QA, app build, and launch smoke test all pass.
@@ -183,8 +183,7 @@ Acceptance criteria:
 Verification:
 - `make release` passed.
 - Packaged app launched from `dist/Observatory.app` and rendered the demo feed.
-- Pre-public screenshots were removed because they included private desktop
-  context; new sanitized launch screenshots are tracked in the Week 1 plan.
+- Fresh sanitized screenshot is tracked at `docs/screenshots/live-feed.png`.
 - Release artifacts:
   - `dist/Agent-Context-Observatory-0.1.0-macos.zip`
   - `dist/agents`
