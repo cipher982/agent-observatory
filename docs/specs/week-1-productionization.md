@@ -8,7 +8,7 @@ successful first-run users.
 
 - Public GitHub repository is clean: no private screenshots, local captures,
   personal workstation assumptions, generated build artifacts, or secrets.
-- A new developer can clone the repo, run backend CI locally, and build the macOS
+- A new developer can clone the repo, run backend QA locally, and build the macOS
   app from documented commands.
 - A macOS user can open the app, understand the product in demo mode, install
   ambient capture with one command, verify status, and uninstall cleanly.
@@ -25,7 +25,8 @@ successful first-run users.
 Acceptance:
 - GitHub repo is public and pushed from local `main`.
 - README is accurate for an outside user.
-- CI runs backend build, vet, and short tests.
+- Backend QA runs locally; GitHub CI is added once the publishing token has
+  workflow scope.
 - Old private screenshots stay out of the public history from this point forward.
 
 ### 2. First-Run Product Polish
@@ -65,6 +66,6 @@ Acceptance:
 ## This Week's Done State
 
 By the end of the week, the project should have a public repo, passing backend
-CI, clean docs, a reproducible local release artifact, fresh launch-safe visuals,
-and one verified fresh-machine install/uninstall pass recorded in the release
-notes.
+QA, GitHub CI if token scope allows it, clean docs, a reproducible local release
+artifact, fresh launch-safe visuals, and one verified fresh-machine
+install/uninstall pass recorded in the release notes.
