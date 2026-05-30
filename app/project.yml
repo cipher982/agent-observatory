@@ -29,6 +29,8 @@ targets:
       path: Observatory/Info.plist
       properties:
         CFBundleDisplayName: Agent Observatory
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSMinimumSystemVersion: "26.0"
         NSHumanReadableCopyright: "Agent Context Observatory"
         # Allow plaintext loopback HTTP to the local engine.

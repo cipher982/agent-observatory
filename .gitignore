@@ -2,6 +2,7 @@
 /backend/agents
 backend/agents
 /app/agents
+/dist/
 
 # Xcode
 *.xcodeproj
