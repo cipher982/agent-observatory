@@ -39,7 +39,8 @@ open /tmp/observatory-dd/Build/Products/Debug/Observatory.app
 ```
 
 The app opens in **Demo** mode by default so the live feed is immediately useful.
-Switch to **Live** in the toolbar to observe real local traffic.
+Use the menu bar extra to switch Demo/Live mode, refresh sessions, show the main
+window, or quit.
 
 ## Build Everything
 

@@ -19,6 +19,8 @@ for public scrutiny.
 - A fresh checkout can build the backend and macOS app from documented commands.
 - The app launches without manual setup, starts its bundled engine, and shows a
   useful empty/demo state instead of raw implementation guidance.
+- The app has a recognizable macOS Dock icon and a menu bar extra for lightweight
+  status/actions.
 - Demo mode produces a visually compelling, deterministic live feed suitable for
   screenshots and a short launch video.
 - Real mode can show current local agent sessions and live proxy captures.

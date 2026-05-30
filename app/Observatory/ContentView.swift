@@ -1,12 +1,5 @@
 import SwiftUI
 
-enum ObservatoryMode: String, CaseIterable, Identifiable {
-    case demo = "Demo"
-    case live = "Live"
-
-    var id: String { rawValue }
-}
-
 // The Observatory's beautiful realtime face. A NavigationSplitView with:
 //  • a hero background (animated mesh gradient) extended under the chrome
 //  • a sidebar of live agent sessions (glass cards)
@@ -16,7 +9,6 @@ enum ObservatoryMode: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @Environment(EngineClient.self) private var engine
     @State private var selection: SessionView.ID?
-    @State private var mode: ObservatoryMode = .demo
 
     var body: some View {
         NavigationSplitView {
@@ -30,14 +22,6 @@ struct ContentView: View {
         }
         .navigationTitle("Agent Observatory")
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("Mode", selection: $mode) {
-                    Label("Demo", systemImage: "sparkles").tag(ObservatoryMode.demo)
-                    Label("Live", systemImage: "dot.radiowaves.left.and.right").tag(ObservatoryMode.live)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 168)
-            }
             ToolbarItem {
                 Button {
                     Task { await engine.refresh() }
@@ -47,12 +31,9 @@ struct ContentView: View {
                 .help("Refresh sessions")
             }
         }
-        .onAppear { engine.start(demo: mode == .demo) }
+        .onAppear { engine.start(mode: engine.mode) }
         .onDisappear { engine.stop() }
-        .onChange(of: mode) { _, next in
-            engine.restart(demo: next == .demo)
-            selection = nil
-        }
+        .onChange(of: engine.mode) { _, _ in selection = nil }
     }
 
     // MARK: sidebar — live agent sessions
@@ -68,7 +49,7 @@ struct ContentView: View {
             case .running:
                 List(selection: $selection) {
                     Section {
-                        LiveStatusRow(mode: mode, connected: engine.streamConnected, eventCount: engine.liveEvents.count)
+                        LiveStatusRow(mode: engine.mode, connected: engine.streamConnected, eventCount: engine.liveEvents.count)
                             .listRowSeparator(.hidden)
                     }
                     Section("Agents") {

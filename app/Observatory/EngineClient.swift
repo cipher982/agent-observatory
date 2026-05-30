@@ -30,7 +30,8 @@ final class EngineClient {
     enum State: Equatable { case starting, running, failed(String) }
 
     private(set) var state: State = .starting
-    private(set) var demoMode = true
+    private(set) var mode: ObservatoryMode = .demo
+    var demoMode: Bool { mode == .demo }
     private(set) var sessions: [SessionView] = []
     private(set) var liveEvents: [LiveEvent] = []      // newest first
     private(set) var lastUpdated: Date?
@@ -52,17 +53,18 @@ final class EngineClient {
 
     var baseURL: URL { URL(string: "http://127.0.0.1:\(apiPort)")! }
 
-    func start(demo: Bool = true) {
-        demoMode = demo
-        startEngineIfNeeded(demo: demo)
+    func start(mode: ObservatoryMode = .demo) {
+        self.mode = mode
+        startEngineIfNeeded(mode: mode)
         pollTask?.cancel()
         pollTask = Task { [weak self] in await self?.pollLoop() }
         streamTask?.cancel()
         streamTask = Task { [weak self] in await self?.streamLoop() }
     }
 
-    func restart(demo: Bool) {
+    func restart(mode: ObservatoryMode) {
         stop()
+        self.mode = mode
         state = .starting
         sessions = []
         liveEvents = []
@@ -70,7 +72,7 @@ final class EngineClient {
         proxyCommand = ""
         streamConnected = false
         pulse = 0
-        start(demo: demo)
+        start(mode: mode)
     }
 
     func stop() {
@@ -78,13 +80,13 @@ final class EngineClient {
         process?.terminate(); process = nil
     }
 
-    private func startEngineIfNeeded(demo: Bool) {
+    private func startEngineIfNeeded(mode: ObservatoryMode) {
         guard process == nil else { return }
         guard let helper = Self.bundledHelperURL() else { return }
         let p = Process()
         p.executableURL = helper
         var monitorArgs = ["monitor", "--port", "\(apiPort)", "--proxy-port", "\(proxyPort)"]
-        if demo { monitorArgs.append("--demo") }
+        if mode == .demo { monitorArgs.append("--demo") }
         p.arguments = monitorArgs
         p.standardOutput = Pipe(); p.standardError = Pipe()
         do { try p.run(); process = p }

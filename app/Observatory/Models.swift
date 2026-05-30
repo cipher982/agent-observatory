@@ -1,5 +1,12 @@
 import Foundation
 
+enum ObservatoryMode: String, CaseIterable, Identifiable {
+    case demo = "Demo"
+    case live = "Live"
+
+    var id: String { rawValue }
+}
+
 // Codable types mirroring the Go engine's fact-level JSON (v2):
 // `agents serve` /api/sessions -> []SessionView with per-fact evidence.
 

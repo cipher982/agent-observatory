@@ -16,6 +16,7 @@ is visible immediately, then a live mode for real local traffic.
 What is included:
 
 - SwiftUI macOS app with realtime live feed.
+- Native Dock icon and menu bar extra.
 - Go backend/CLI with transcript discovery, context resolver, fact/evidence
   model, localhost API, SSE stream, and optional HTTPS proxy.
 - Install/status/uninstall flow for ambient capture.
