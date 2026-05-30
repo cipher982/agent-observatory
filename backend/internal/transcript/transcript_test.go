@@ -24,7 +24,7 @@ func mkfile(t *testing.T, path, content string) {
 // so GitRepo resolves via the ~/git heuristic.
 func claudeJSONLFor(home string) string {
 	cwd := filepath.Join(home, "git", "workspace", "example-service")
-	return `{"type":"attachment","attachment":{"type":"file","content":{"file":{"filePath":"/x/AGENTS.md","content":"doctrine with Behavior gates inside"}}},"cwd":"` + cwd + `","gitBranch":"main","sessionId":"sess-abc","version":"2.1.152","timestamp":"2026-05-01T10:00:00Z"}
+	return `{"type":"attachment","attachment":{"type":"file","content":{"file":{"filePath":"/x/AGENTS.md","content":"run repo smoke tests before launch"}}},"cwd":"` + cwd + `","gitBranch":"main","sessionId":"sess-abc","version":"2.1.152","timestamp":"2026-05-01T10:00:00Z"}
 {"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":["mcp__search_hub__query","Bash"]},"timestamp":"2026-05-01T10:00:01Z"}
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"},{"type":"text"}]},"timestamp":"2026-05-01T10:00:05Z"}
 not valid json — must be skipped
@@ -92,8 +92,8 @@ func TestExtractClaudeContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(blocks, "\n")
-	if !strings.Contains(joined, "Behavior gates") {
-		t.Errorf("expected marker in blocks, got %q", joined)
+	if !strings.Contains(joined, "repo smoke tests") {
+		t.Errorf("expected instruction text in blocks, got %q", joined)
 	}
 	// tools: from deferred delta + tool_use, deduped.
 	want := map[string]bool{"mcp__search_hub__query": true, "Bash": true, "Read": true}
@@ -110,7 +110,7 @@ func TestExtractClaudeContext(t *testing.T) {
 // --- Codex fixtures ---
 
 const codexJSONL = `{"timestamp":"2026-05-02T09:00:00Z","type":"session_meta","payload":{"id":"codex-123","cwd":"/h/git/me","cli_version":"0.134.0","base_instructions":{"text":"codex base prompt"}}}
-{"timestamp":"2026-05-02T09:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"AGENTS.md says Behavior gates matter"}]}}
+{"timestamp":"2026-05-02T09:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"AGENTS.md says repo smoke tests matter"}]}}
 {"timestamp":"2026-05-02T09:00:02Z","type":"response_item","payload":{"type":"function_call","name":"shell"}}
 {"timestamp":"2026-05-02T09:00:03Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch"}}
 garbage line skipped
@@ -170,8 +170,8 @@ func TestExtractCodexContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(blocks, "\n")
-	if !strings.Contains(joined, "Behavior gates") {
-		t.Errorf("expected marker in codex blocks, got %q", joined)
+	if !strings.Contains(joined, "repo smoke tests") {
+		t.Errorf("expected instruction text in codex blocks, got %q", joined)
 	}
 	if !strings.Contains(joined, "codex base prompt") {
 		t.Errorf("expected base_instructions in blocks")

@@ -9,15 +9,13 @@ import (
 )
 
 // TestPersistRedactsBodies proves the v2 privacy rule: persisted captures store
-// only DERIVED facts (length, marker, tool names) — never the raw system prompt.
+// only DERIVED facts (length, endpoint, tool names) — never the raw system prompt.
 func TestPersistRedactsBodies(t *testing.T) {
-	sensitive := "SENSITIVE PROMPT with Behavior gates and private data"
+	sensitive := "SENSITIVE PROMPT with private release instructions"
 	caps := []Capture{{
 		Host:         "bedrock-runtime.us-east-1.amazonaws.com",
 		Endpoint:     "bedrock/invoke",
 		SystemPrompt: sensitive,
-		AgentsMarker: true,
-		MarkerSlot:   "user",
 		ToolNames:    []string{"mcp__search__query"},
 		When:         time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC),
 	}}
@@ -31,7 +29,7 @@ func TestPersistRedactsBodies(t *testing.T) {
 	if strings.Contains(string(raw), sensitive) {
 		t.Fatalf("persisted file leaked the raw system prompt — privacy violation")
 	}
-	if !strings.Contains(string(raw), "bedrock/invoke") || !strings.Contains(string(raw), "agentsMarker") {
+	if !strings.Contains(string(raw), "bedrock/invoke") || !strings.Contains(string(raw), "systemChars") {
 		t.Errorf("persisted file should retain derived facts")
 	}
 
@@ -43,7 +41,7 @@ func TestPersistRedactsBodies(t *testing.T) {
 	if len(back) != 1 || back[0].SystemPrompt != "" {
 		t.Errorf("ReadCaptures should not restore raw prompt, got %q", back[0].SystemPrompt)
 	}
-	if !back[0].AgentsMarker || back[0].MarkerSlot != "user" || len(back[0].ToolNames) != 1 {
+	if len(back[0].ToolNames) != 1 {
 		t.Errorf("derived facts lost in round-trip: %+v", back[0])
 	}
 }

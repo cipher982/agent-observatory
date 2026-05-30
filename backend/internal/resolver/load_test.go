@@ -26,7 +26,7 @@ func fakeHome(t *testing.T) string {
 	me := filepath.Join(home, "git", "me")
 
 	// Global doctrine AGENTS.md
-	writeFile(t, filepath.Join(me, "AGENTS.md"), "global doctrine with Behavior gates\n")
+	writeFile(t, filepath.Join(me, "AGENTS.md"), "global instructions for agent behavior\n")
 
 	// Skill catalog: two skills with SKILL.md, one dir without (must be ignored),
 	// and a stray file (ignored).

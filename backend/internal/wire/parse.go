@@ -5,17 +5,14 @@ import (
 	"strings"
 )
 
-// AgentsMarker is the doctrine phrase indicating AGENTS.md was injected.
-const AgentsMarker = "Behavior gates"
-
 // ParseBody inspects an intercepted request for a known LLM endpoint and extracts
 // the assembled system prompt + tool names. It recognizes:
 //   - Anthropic native:        POST .../v1/messages           (host api.anthropic.com)
 //   - OpenAI/Codex:            POST .../chat/completions, .../responses
 //   - Bedrock (classic):       POST /model/{id}/invoke[-with-response-stream]
-//                              host bedrock-runtime.<region>.amazonaws.com
-//                              BODY = Anthropic Messages shape (anthropic_version,
-//                              system, tools, messages)
+//     host bedrock-runtime.<region>.amazonaws.com
+//     BODY = Anthropic Messages shape (anthropic_version,
+//     system, tools, messages)
 //   - Bedrock (aws-external):  POST .../v1/messages on aws-external-anthropic.*
 //
 // The Bedrock body is the same Anthropic Messages JSON, so the Anthropic parser
@@ -48,12 +45,7 @@ func isBedrockInvoke(host, path string) bool {
 }
 
 func finalize(c Capture, allText string) (Capture, bool) {
-	switch {
-	case strings.Contains(c.SystemPrompt, AgentsMarker):
-		c.AgentsMarker, c.MarkerSlot = true, "system"
-	case strings.Contains(allText, AgentsMarker):
-		c.AgentsMarker, c.MarkerSlot = true, "user"
-	}
+	c.AllText = allText
 	return c, true
 }
 

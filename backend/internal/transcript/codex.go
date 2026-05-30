@@ -31,8 +31,7 @@ import (
 // Injected AGENTS.md / system-prompt:
 //   (a) session_meta.payload.base_instructions.text  (Codex base prompt)
 //   (b) response_item.payload where payload.type == "message" -> payload.content[]
-//       blocks with .text — the user/developer messages carry the AGENTS.md
-//       content (marker "Behavior gates" found in a role=="user" input_text block).
+//       blocks with .text — the user/developer messages carry AGENTS.md content.
 //
 // Tools (invoked only; no full catalog is recorded in the transcript):
 //   response_item.payload.type == "function_call"     -> payload.name
@@ -45,10 +44,10 @@ type codexRecord struct {
 }
 
 type codexSessionMeta struct {
-	ID               string             `json:"id"`
-	CWD              string             `json:"cwd"`
-	CLIVersion       string             `json:"cli_version"`
-	BaseInstructions *codexBaseInstr    `json:"base_instructions"`
+	ID               string          `json:"id"`
+	CWD              string          `json:"cwd"`
+	CLIVersion       string          `json:"cli_version"`
+	BaseInstructions *codexBaseInstr `json:"base_instructions"`
 }
 
 type codexBaseInstr struct {

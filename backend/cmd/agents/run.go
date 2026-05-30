@@ -107,8 +107,8 @@ func runRun(args []string) int {
 	caps := srv.Captures()
 	fmt.Fprintf(os.Stderr, "\nobservatory: captured %d outbound LLM request(s) for %s\n", len(caps), runtime)
 	for i, c := range caps {
-		fmt.Fprintf(os.Stderr, "  [%d] %s host=%s system=%dch AGENTS=%v(%s) tools=%d\n",
-			i, c.Endpoint, c.Host, len([]rune(c.SystemPrompt)), c.AgentsMarker, c.MarkerSlot, len(c.ToolNames))
+		fmt.Fprintf(os.Stderr, "  [%d] %s host=%s system=%dch tools=%d\n",
+			i, c.Endpoint, c.Host, len([]rune(c.SystemPrompt)), len(c.ToolNames))
 	}
 	// Persist captures so `agents sessions` can fold them in as VERIFIED facts.
 	if len(caps) > 0 {

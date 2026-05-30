@@ -5,15 +5,15 @@
 package evidence
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
 	"strings"
 
 	"github.com/cipher982/agent-observatory/backend/internal/fact"
 	"github.com/cipher982/agent-observatory/backend/internal/resolver"
 	"github.com/cipher982/agent-observatory/backend/internal/transcript"
 )
-
-// agentsMarker is the doctrine phrase; matching it is HEURISTIC coverage only.
-const agentsMarker = "Behavior gates"
 
 // Source is an evidence producer. Availability lets the UI report honest reasons
 // when a source can't speak to a session.
@@ -30,16 +30,24 @@ type Source interface {
 // typed Expectations. These are the claims under test — NOT evidence.
 func ExpectationsFromResolution(runtime string, res resolver.Resolution) []fact.Expectation {
 	var out []fact.Expectation
-	// Global doctrine (AGENTS.md) is expected whenever a global knowledge layer
-	// exists on disk.
+	// Every resolved instruction layer is expected to be present in the assembled
+	// prompt. The digest lets observations match the user's own instructions
+	// without relying on private marker phrases.
 	for _, kl := range res.Knowledge {
-		if kl.Scope == resolver.ScopeGlobal && kl.Exists {
-			out = append(out, fact.Expectation{
-				Key:      fact.FactKey{Kind: fact.InstructionText, Runtime: runtime, Name: "AGENTS.md global doctrine"},
-				Required: true,
-				Origin:   kl.Label,
-			})
+		_, digest, ok := knowledgeFingerprint(kl)
+		if !ok {
+			continue
 		}
+		out = append(out, fact.Expectation{
+			Key: fact.FactKey{
+				Kind:    fact.InstructionText,
+				Runtime: runtime,
+				Name:    instructionFactName(kl),
+				Digest:  digest,
+			},
+			Required: true,
+			Origin:   kl.Label,
+		})
 	}
 	// Each resolver-active tool (MCP server) is expected to be available. Names
 	// are canonicalized (underscored) so expectation keys match observation keys
@@ -58,7 +66,9 @@ func ExpectationsFromResolution(runtime string, res resolver.Resolution) []fact.
 }
 
 // TranscriptSource emits OBSERVED evidence from the on-disk CLI transcript.
-type TranscriptSource struct{}
+type TranscriptSource struct {
+	Resolution resolver.Resolution
+}
 
 func (TranscriptSource) Name() string { return "transcript" }
 
@@ -75,8 +85,16 @@ func (TranscriptSource) Available(s transcript.Session) (bool, string) {
 
 // Observe reads the assembled context and emits observations. The KEY nuance:
 // tool coverage differs per runtime (Claude=complete catalog, Codex=invoked-only
-// → positive). Instruction-text presence via the marker is HEURISTIC coverage.
-func (TranscriptSource) Observe(s transcript.Session) []fact.Observation {
+// → positive). Instruction-text presence is matched against the user's resolved
+// instruction files by normalized digest, not by a hardcoded marker phrase.
+func (ts TranscriptSource) Observe(s transcript.Session) []fact.Observation {
+	return ts.ObserveWithResolution(s, ts.Resolution)
+}
+
+func (ts TranscriptSource) ObserveWithResolution(s transcript.Session, res resolver.Resolution) []fact.Observation {
+	if len(res.Knowledge) == 0 {
+		res = ts.Resolution
+	}
 	asm, err := transcript.ExtractAssembled(s)
 	if err != nil {
 		return nil
@@ -86,27 +104,7 @@ func (TranscriptSource) Observe(s transcript.Session) []fact.Observation {
 
 	joined := strings.Join(asm.SystemPromptBlocks, "\n")
 	if len(asm.SystemPromptBlocks) > 0 {
-		// Doctrine presence — marker substring = heuristic coverage. Present-only:
-		// if the marker is absent we DON'T assert absence at heuristic level
-		// unless the transcript clearly contains the assembled prompt. We emit a
-		// Present obs when found; when not found but we DID capture prompt text,
-		// emit Absent at heuristic coverage (can hint missing, can't anchor conflict).
-		k := fact.FactKey{Kind: fact.InstructionText, Runtime: s.Runtime, Name: "AGENTS.md global doctrine"}
-		if strings.Contains(joined, agentsMarker) {
-			out = append(out, fact.Observation{
-				Key: k, Polarity: fact.Present, Level: fact.Observed,
-				Source: "transcript", Coverage: fact.CoverageHeuristic,
-				Match: fact.MatchMarkerHeuristic, Epoch: ep,
-				Detail: "doctrine marker found in assembled prompt",
-			})
-		} else {
-			out = append(out, fact.Observation{
-				Key: k, Polarity: fact.Absent, Level: fact.Observed,
-				Source: "transcript", Coverage: fact.CoverageHeuristic,
-				Match: fact.MatchMarkerHeuristic, Epoch: ep,
-				Detail: "doctrine marker NOT found in captured prompt",
-			})
-		}
+		out = append(out, ObserveInstructionText("transcript", fact.Observed, s.Runtime, ep, joined, res, false)...)
 	}
 
 	// Tools. Coverage depends on completeness.
@@ -132,6 +130,67 @@ func (TranscriptSource) Observe(s transcript.Session) []fact.Observation {
 	// the expectation set, so the merge can distinguish "complete-catalog absence"
 	// (real drift) from "positive-only didn't mention it" (coverage gap).
 	return out
+}
+
+// ObserveInstructionText emits observations for every expected instruction layer
+// that can be tested against captured prompt text. When complete is false,
+// absence is omitted rather than guessed.
+func ObserveInstructionText(source string, level fact.Level, runtime string, ep fact.Epoch, text string, res resolver.Resolution, complete bool) []fact.Observation {
+	normText := normalizeInstructionText(text)
+	if normText == "" {
+		return nil
+	}
+	var out []fact.Observation
+	for _, kl := range res.Knowledge {
+		normExpected, digest, ok := knowledgeFingerprint(kl)
+		if !ok {
+			continue
+		}
+		key := fact.FactKey{Kind: fact.InstructionText, Runtime: runtime, Name: instructionFactName(kl), Digest: digest}
+		if strings.Contains(normText, normExpected) {
+			out = append(out, fact.Observation{
+				Key: key, Polarity: fact.Present, Level: level, Source: source,
+				Coverage: fact.CoverageComplete, Match: fact.MatchNormalizedDigest, Epoch: ep,
+				Detail: "resolved instruction text present in captured prompt",
+			})
+			continue
+		}
+		if complete {
+			out = append(out, fact.Observation{
+				Key: key, Polarity: fact.Absent, Level: level, Source: source,
+				Coverage: fact.CoverageComplete, Match: fact.MatchNormalizedDigest, Epoch: ep,
+				Detail: "resolved instruction text absent from captured prompt",
+			})
+		}
+	}
+	return out
+}
+
+func instructionFactName(kl resolver.KnowledgeLayer) string {
+	if kl.Label == "" || kl.Label == "global" {
+		return "AGENTS.md global instructions"
+	}
+	return "AGENTS.md " + kl.Label
+}
+
+func knowledgeFingerprint(kl resolver.KnowledgeLayer) (normalized, digest string, ok bool) {
+	if !kl.Exists {
+		return "", "", false
+	}
+	data, err := os.ReadFile(kl.Path)
+	if err != nil {
+		return "", "", false
+	}
+	normalized = normalizeInstructionText(string(data))
+	if normalized == "" {
+		return "", "", false
+	}
+	sum := sha256.Sum256([]byte(normalized))
+	return normalized, hex.EncodeToString(sum[:]), true
+}
+
+func normalizeInstructionText(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // ObserveToolAbsence emits Absent observations (Complete coverage) for expected

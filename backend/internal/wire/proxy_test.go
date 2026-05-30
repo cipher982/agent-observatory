@@ -12,45 +12,48 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/cipher982/agent-observatory/backend/internal/fact"
+	"github.com/cipher982/agent-observatory/backend/internal/resolver"
 )
 
 // TestParseBodyVariants checks every endpoint shape parses, including Bedrock.
 func TestParseBodyVariants(t *testing.T) {
 	cases := []struct {
 		name, host, path, body string
-		wantTool, wantMarker   bool
-		wantSlot               string
+		wantTool               bool
+		wantSystem             string
 	}{
 		{
 			name: "anthropic-native", host: "api.anthropic.com", path: "/v1/messages",
-			body:     `{"system":"you are...Behavior gates...","tools":[{"name":"x"}],"messages":[]}`,
-			wantTool: true, wantMarker: true, wantSlot: "system",
+			body:       `{"system":"you are...project instructions...","tools":[{"name":"x"}],"messages":[]}`,
+			wantTool:   true,
+			wantSystem: "you are...project instructions...",
 		},
 		{
 			name: "bedrock-invoke", host: "bedrock-runtime.us-east-1.amazonaws.com",
 			path:     "/model/global.anthropic.claude-opus-4-8/invoke-with-response-stream",
-			body:     `{"anthropic_version":"bedrock-2023-05-31","system":[{"type":"text","text":"Behavior gates here"}],"tools":[{"name":"mcp__search__query"}],"messages":[]}`,
-			wantTool: true, wantMarker: true, wantSlot: "system",
+			body:     `{"anthropic_version":"bedrock-2023-05-31","system":[{"type":"text","text":"project instructions here"}],"tools":[{"name":"mcp__search__query"}],"messages":[]}`,
+			wantTool: true, wantSystem: "project instructions here",
 		},
 		{
 			name: "aws-external-anthropic", host: "aws-external-anthropic.us-east-1.api.aws",
 			path:     "/v1/messages",
-			body:     `{"system":"x","tools":[{"name":"t"}],"messages":[{"role":"user","content":"...Behavior gates..."}]}`,
-			wantTool: true, wantMarker: true, wantSlot: "user",
+			body:     `{"system":"x","tools":[{"name":"t"}],"messages":[{"role":"user","content":"...project instructions..."}]}`,
+			wantTool: true, wantSystem: "x",
 		},
 		{
 			name: "openai-chat", host: "api.openai.com", path: "/v1/chat/completions",
-			body:     `{"messages":[{"role":"system","content":"Behavior gates"}],"tools":[{"type":"function","function":{"name":"f"}}]}`,
-			wantTool: true, wantMarker: true, wantSlot: "system",
+			body:     `{"messages":[{"role":"system","content":"project instructions"}],"tools":[{"type":"function","function":{"name":"f"}}]}`,
+			wantTool: true, wantSystem: "project instructions",
 		},
 		{
 			name: "codex-responses", host: "api.openai.com", path: "/v1/responses",
-			body:     `{"instructions":"sys","input":[{"role":"user","content":[{"type":"input_text","text":"...Behavior gates..."}]}],"tools":[{"type":"function","name":"exec"}]}`,
-			wantTool: true, wantMarker: true, wantSlot: "user",
+			body:     `{"instructions":"sys","input":[{"role":"user","content":[{"type":"input_text","text":"...project instructions..."}]}],"tools":[{"type":"function","name":"exec"}]}`,
+			wantTool: true, wantSystem: "sys",
 		},
 	}
 	for _, c := range cases {
@@ -62,11 +65,11 @@ func TestParseBodyVariants(t *testing.T) {
 			if (len(cap.ToolNames) > 0) != c.wantTool {
 				t.Errorf("tools = %v, wantTool=%v", cap.ToolNames, c.wantTool)
 			}
-			if cap.AgentsMarker != c.wantMarker {
-				t.Errorf("marker = %v, want %v", cap.AgentsMarker, c.wantMarker)
+			if cap.SystemPrompt != c.wantSystem {
+				t.Errorf("system = %q, want %q", cap.SystemPrompt, c.wantSystem)
 			}
-			if cap.AgentsMarker && cap.MarkerSlot != c.wantSlot {
-				t.Errorf("marker slot = %q, want %q", cap.MarkerSlot, c.wantSlot)
+			if cap.AllText == "" {
+				t.Errorf("all text should be populated")
 			}
 		})
 	}
@@ -80,7 +83,8 @@ func TestEndToEndInterception(t *testing.T) {
 	tmp := t.TempDir()
 
 	// 1) Upstream: a real TLS server that echoes whether it got the exact body.
-	const reqBody = `{"system":"sys with Behavior gates","tools":[{"name":"mcp__reviewer__ask"}],"messages":[]}`
+	const instructionText = "Run release smoke tests before launch."
+	const reqBody = `{"system":"sys with Run release smoke tests before launch.","tools":[{"name":"mcp__reviewer__ask"}],"messages":[]}`
 	var gotUpstreamBody []byte
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUpstreamBody, _ = io.ReadAll(r.Body)
@@ -154,18 +158,19 @@ func TestEndToEndInterception(t *testing.T) {
 		t.Fatalf("proxy captured no requests")
 	}
 	c := caps[0]
-	if !c.AgentsMarker {
-		t.Errorf("capture missed AGENTS marker")
+	if c.AllText == "" {
+		t.Errorf("capture missed assembled request text")
 	}
 	if len(c.ToolNames) != 1 || c.ToolNames[0] != "mcp__reviewer__ask" {
 		t.Errorf("capture tools = %v, want [mcp__reviewer__ask]", c.ToolNames)
 	}
 
 	// 4c) The capture must convert into a VERIFIED observation.
-	obs := srv.Observations("claude", "sess-1")
+	res := testResolution(t, tmp, instructionText)
+	obs := srv.ObservationsForResolution("claude", "sess-1", res)
 	var verifiedDoctrine bool
 	for _, o := range obs {
-		if o.Source == "wire" && o.Level == fact.Verified && o.Polarity == fact.Present {
+		if o.Source == "wire" && o.Level == fact.Verified && o.Polarity == fact.Present && o.Key.Kind == fact.InstructionText {
 			verifiedDoctrine = true
 		}
 	}
@@ -182,4 +187,15 @@ func TestEndToEndInterception(t *testing.T) {
 	if _, err := os.Stat(srv.CAPath()); err != nil {
 		t.Errorf("CA pem not written: %v", err)
 	}
+}
+
+func testResolution(t *testing.T, dir, instructionText string) resolver.Resolution {
+	t.Helper()
+	p := filepath.Join(dir, "AGENTS.md")
+	if err := os.WriteFile(p, []byte(instructionText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return resolver.Resolution{Knowledge: []resolver.KnowledgeLayer{{
+		Scope: resolver.ScopeGlobal, Label: "global", Path: p, Exists: true, Bytes: len(instructionText),
+	}}}
 }

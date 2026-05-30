@@ -75,7 +75,7 @@ struct LiveFeedView: View {
 }
 
 // One captured request, as a glass card. Tint encodes runtime; a witness badge
-// encodes whether the AGENTS.md doctrine was present in the outbound body.
+// confirms the request body shape was parsed into derived facts.
 struct LiveRequestCard: View {
     let event: LiveEvent
     @State private var appeared = false
@@ -99,7 +99,7 @@ struct LiveRequestCard: View {
                 HStack(spacing: 10) {
                     metric("\(event.systemChars)", "chars", .blue)
                     metric("\(event.toolCount)", "tools", .mint)
-                    doctrineBadge
+                    parsedBadge
                 }
                 if let tools = event.toolNames, !tools.isEmpty {
                     Text(tools.prefix(8).joined(separator: " · "))
@@ -124,13 +124,13 @@ struct LiveRequestCard: View {
         }
     }
 
-    private var doctrineBadge: some View {
+    private var parsedBadge: some View {
         HStack(spacing: 3) {
-            Image(systemName: event.agentsMarker ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-            Text(event.agentsMarker ? "instructions present" : "instructions missing")
+            Image(systemName: event.parsed ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+            Text(event.parsed ? "request parsed" : "unparsed")
         }
         .font(.caption2.weight(.semibold))
-        .foregroundStyle(event.agentsMarker ? .green : .orange)
+        .foregroundStyle(event.parsed ? .green : .orange)
     }
 
     private var runtimeIcon: String {

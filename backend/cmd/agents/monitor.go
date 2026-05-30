@@ -133,16 +133,15 @@ func newLiveBus(srv *wire.Server) *liveBus { return &liveBus{srv: srv} }
 
 // streamEvent is the JSON shape pushed to the GUI per live request.
 type streamEvent struct {
-	Type         string   `json:"type"` // "capture"
-	Host         string   `json:"host"`
-	Endpoint     string   `json:"endpoint"`
-	Runtime      string   `json:"runtime"`
-	SystemChars  int      `json:"systemChars"`
-	AgentsMarker bool     `json:"agentsMarker"`
-	MarkerSlot   string   `json:"markerSlot"`
-	ToolCount    int      `json:"toolCount"`
-	ToolNames    []string `json:"toolNames"`
-	At           string   `json:"at"`
+	Type        string   `json:"type"` // "capture"
+	Host        string   `json:"host"`
+	Endpoint    string   `json:"endpoint"`
+	Runtime     string   `json:"runtime"`
+	SystemChars int      `json:"systemChars"`
+	Parsed      bool     `json:"parsed"`
+	ToolCount   int      `json:"toolCount"`
+	ToolNames   []string `json:"toolNames"`
+	At          string   `json:"at"`
 }
 
 func (b *liveBus) handleSSE(w http.ResponseWriter, r *http.Request) {
@@ -179,8 +178,7 @@ func (b *liveBus) handleSSE(w http.ResponseWriter, r *http.Request) {
 			ev := streamEvent{
 				Type: "capture", Host: c.Host, Endpoint: c.Endpoint,
 				Runtime: runtimeForHost(c.Host), SystemChars: len([]rune(c.SystemPrompt)),
-				AgentsMarker: c.AgentsMarker, MarkerSlot: c.MarkerSlot,
-				ToolCount: len(c.ToolNames), ToolNames: c.ToolNames,
+				Parsed: true, ToolCount: len(c.ToolNames), ToolNames: c.ToolNames,
 				At: time.Now().Format(time.RFC3339),
 			}
 			data, _ := json.Marshal(ev)
@@ -209,21 +207,19 @@ func runDemoInjector(srv *wire.Server) {
 	type sample struct {
 		host, endpoint string
 		system         int
-		marker         bool
-		slot           string
 		tools          []string
 	}
 	samples := []sample{
-		{"bedrock-runtime.us-east-1.amazonaws.com", "bedrock/invoke", 5548, true, "user",
+		{"bedrock-runtime.us-east-1.amazonaws.com", "bedrock/invoke", 5548,
 			[]string{"Bash", "Edit", "Read", "Grep", "Glob", "Write", "mcp__review-agent__ask", "mcp__context-store__recall"}},
-		{"api.openai.com", "openai/responses", 41833, true, "user",
+		{"api.openai.com", "openai/responses", 41833,
 			[]string{"exec_command", "apply_patch", "update_plan", "mcp__docs__query", "mcp__search-hub__search"}},
-		{"api.anthropic.com", "anthropic/messages", 6120, true, "system",
+		{"api.anthropic.com", "anthropic/messages", 6120,
 			[]string{"str_replace", "bash", "mcp__drive__list_files", "mcp__tickets__list_items"}},
-		{"bedrock-runtime.us-east-1.amazonaws.com", "bedrock/invoke", 5212, true, "user",
+		{"bedrock-runtime.us-east-1.amazonaws.com", "bedrock/invoke", 5212,
 			[]string{"Read", "Edit", "Bash", "mcp__image-hub__generate_image"}},
-		{"api.openai.com", "openai/responses", 38904, false, "",
-			[]string{"exec_command", "apply_patch"}}, // a "no doctrine" one for contrast
+		{"api.openai.com", "openai/responses", 38904,
+			[]string{"exec_command", "apply_patch"}},
 	}
 	inject := func(i int) {
 		s := samples[i%len(samples)]
@@ -233,7 +229,7 @@ func runDemoInjector(srv *wire.Server) {
 		}
 		srv.Inject(wire.Capture{
 			Host: s.host, Endpoint: s.endpoint,
-			SystemPrompt: join(sys), AgentsMarker: s.marker, MarkerSlot: s.slot,
+			SystemPrompt: join(sys), AllText: join(sys),
 			ToolNames: s.tools,
 		})
 	}

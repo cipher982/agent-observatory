@@ -3,27 +3,27 @@ package fact
 import "testing"
 
 // TestConflictE2E proves the highest-value feature end-to-end through Merge:
-// when the transcript (OBSERVED) says a doctrine fact is PRESENT but the wire
+// when the transcript (OBSERVED) says an instruction fact is PRESENT but the wire
 // (VERIFIED) proves it ABSENT for the SAME session — and both are Complete
 // coverage — the merge reports CONFLICT (the silent-regression alarm).
 //
 // It ALSO proves the inverse guard: a Codex positive-only "absence" must NEVER
 // escalate to CONFLICT.
 func TestConflictE2E(t *testing.T) {
-	doctrine := FactKey{Kind: InstructionText, Runtime: "claude", Name: "AGENTS.md global doctrine"}
+	instructions := FactKey{Kind: InstructionText, Runtime: "claude", Name: "AGENTS.md global instructions"}
 	ep := Epoch{SessionID: "s1"}
 
-	// Transcript recorded the doctrine present; wire proves it absent on the wire.
+	// Transcript recorded the instructions present; wire proves them absent on the wire.
 	// (The regression class: the CLI's own record disagrees with what left the box.)
 	results := Merge(
-		[]Expectation{{Key: doctrine, Required: true, Origin: "global"}},
+		[]Expectation{{Key: instructions, Required: true, Origin: "global"}},
 		[]Observation{
-			{Key: doctrine, Polarity: Present, Level: Observed, Source: "transcript", Coverage: CoverageComplete, Epoch: ep},
-			{Key: doctrine, Polarity: Absent, Level: Verified, Source: "wire", Coverage: CoverageComplete, Epoch: ep},
+			{Key: instructions, Polarity: Present, Level: Observed, Source: "transcript", Coverage: CoverageComplete, Epoch: ep},
+			{Key: instructions, Polarity: Absent, Level: Verified, Source: "wire", Coverage: CoverageComplete, Epoch: ep},
 		},
 	)
-	if statusFor(results, doctrine) != StatusConflict {
-		t.Fatalf("expected CONFLICT for transcript-present vs wire-absent, got %q", statusFor(results, doctrine))
+	if statusFor(results, instructions) != StatusConflict {
+		t.Fatalf("expected CONFLICT for transcript-present vs wire-absent, got %q", statusFor(results, instructions))
 	}
 
 	// Inverse guard: a positive-only transcript absence + wire present must NOT

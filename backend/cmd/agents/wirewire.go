@@ -1,13 +1,13 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/cipher982/agent-observatory/backend/internal/evidence"
 	"github.com/cipher982/agent-observatory/backend/internal/fact"
 	"github.com/cipher982/agent-observatory/backend/internal/observatory"
+	"github.com/cipher982/agent-observatory/backend/internal/resolver"
 	"github.com/cipher982/agent-observatory/backend/internal/wire"
 )
 
@@ -20,50 +20,23 @@ import (
 // correlation is a refinement; this is enough to surface real VERIFIED facts
 // and to demonstrate CONFLICT against the transcript.
 func installWireObservations() {
-	observatory.WireObservations = func(sessionID string) []fact.Observation {
-		// We don't know the runtime from sessionID alone here, so scan all
-		// persisted wire files and emit observations tagged with their runtime;
-		// the merge only matches when the FactKey.Runtime aligns with the
-		// session's expectations, so cross-runtime captures are naturally ignored.
+	observatory.WireObservations = func(runtime, sessionID string, res resolver.Resolution) []fact.Observation {
 		dir := stateDir()
-		entries, err := os.ReadDir(dir)
+		caps, err := wire.ReadCaptures(filepath.Join(dir, "wire-"+runtime+".json"))
 		if err != nil {
 			return nil
 		}
-		var out []fact.Observation
-		for _, e := range entries {
-			name := e.Name()
-			if !strings.HasPrefix(name, "wire-") || !strings.HasSuffix(name, ".json") {
-				continue
-			}
-			runtime := strings.TrimSuffix(strings.TrimPrefix(name, "wire-"), ".json")
-			caps, err := wire.ReadCaptures(filepath.Join(dir, name))
-			if err != nil {
-				continue
-			}
-			out = append(out, observationsFromCaptures(runtime, sessionID, caps)...)
-		}
-		return out
+		return observationsFromCaptures(runtime, sessionID, res, caps)
 	}
 }
 
 // observationsFromCaptures mirrors wire.Server.Observations but works on persisted
 // (redacted) captures and a supplied runtime/session.
-func observationsFromCaptures(runtime, sessionID string, caps []wire.Capture) []fact.Observation {
+func observationsFromCaptures(runtime, sessionID string, res resolver.Resolution, caps []wire.Capture) []fact.Observation {
 	var out []fact.Observation
 	for i, c := range caps {
 		ep := fact.Epoch{SessionID: sessionID, RequestID: "wire-" + runtime + "-" + itoa(i)}
-		dk := fact.FactKey{Kind: fact.InstructionText, Runtime: runtime, Name: "AGENTS.md global doctrine"}
-		pol := fact.Absent
-		detail := "doctrine marker ABSENT from outbound request"
-		if c.AgentsMarker {
-			pol = fact.Present
-			detail = "doctrine marker present in outbound request (" + c.MarkerSlot + ")"
-		}
-		out = append(out, fact.Observation{
-			Key: dk, Polarity: pol, Level: fact.Verified, Source: "wire",
-			Coverage: fact.CoverageComplete, Match: fact.MatchMarkerHeuristic, Epoch: ep, Detail: detail,
-		})
+		out = append(out, evidence.ObserveInstructionText("wire", fact.Verified, runtime, ep, c.AllText, res, true)...)
 		for _, raw := range c.ToolNames {
 			server := canonServerName(raw)
 			if server == "" {

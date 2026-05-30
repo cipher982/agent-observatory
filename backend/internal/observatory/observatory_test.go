@@ -15,7 +15,7 @@ func TestExplainPath(t *testing.T) {
 	me := filepath.Join(home, "git", "me")
 	mustMkdir(t, filepath.Join(me, "skills", "triage"))
 	mustMkdir(t, filepath.Join(me, "registry"))
-	mustWrite(t, filepath.Join(me, "AGENTS.md"), "# doctrine\nBehavior gates\n")
+	mustWrite(t, filepath.Join(me, "AGENTS.md"), "# doctrine\nRun repo smoke tests before release.\n")
 	mustWrite(t, filepath.Join(me, "skills", "triage", "SKILL.md"), "---\nname: triage\n---\n")
 	mustWrite(t, filepath.Join(me, "registry", "mcp-registry.toml"),
 		"[servers.reviewer]\ncommand=\"x\"\n[servers.context-store]\ncommand=\"y\"\n")
@@ -81,7 +81,7 @@ func TestLiveSessionsFactPipeline(t *testing.T) {
 	// Canonical context so the resolver produces tool expectations.
 	me := filepath.Join(home, "git", "me")
 	mustMkdir(t, filepath.Join(me, "registry"))
-	mustWrite(t, filepath.Join(me, "AGENTS.md"), "# doctrine\nBehavior gates\n")
+	mustWrite(t, filepath.Join(me, "AGENTS.md"), "# doctrine\nRun repo smoke tests before release.\n")
 	mustWrite(t, filepath.Join(me, "registry", "mcp-registry.toml"),
 		"[servers.search-hub]\ncommand=\"x\"\n[servers.ghost-tool]\ncommand=\"y\"\n")
 
@@ -92,7 +92,7 @@ func TestLiveSessionsFactPipeline(t *testing.T) {
 	proj := filepath.Join(home, ".claude", "projects", "p")
 	mustMkdir(t, proj)
 	mustWrite(t, filepath.Join(proj, "c.jsonl"),
-		`{"type":"attachment","attachment":{"type":"file","content":{"file":{"filePath":"/x/AGENTS.md","content":"doctrine Behavior gates"}}},"cwd":"`+me+`","gitBranch":"main","sessionId":"sess-1","version":"2.1","timestamp":"2026-05-29T10:00:00Z"}
+		`{"type":"attachment","attachment":{"type":"file","content":{"file":{"filePath":"/x/AGENTS.md","content":"# doctrine\nRun repo smoke tests before release."}}},"cwd":"`+me+`","gitBranch":"main","sessionId":"sess-1","version":"2.1","timestamp":"2026-05-29T10:00:00Z"}
 {"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":["mcp__search-hub__query","Bash"]},"timestamp":"2026-05-29T10:00:01Z"}`)
 
 	views, err := LiveSessions(10)
@@ -116,8 +116,8 @@ func TestLiveSessionsFactPipeline(t *testing.T) {
 	for _, f := range cv.Facts {
 		byName[f.Key.Name] = string(f.Status)
 	}
-	if byName["AGENTS.md global doctrine"] != "expected_observed" {
-		t.Errorf("doctrine status = %q, want expected_observed", byName["AGENTS.md global doctrine"])
+	if byName["AGENTS.md global instructions"] != "expected_observed" {
+		t.Errorf("instructions status = %q, want expected_observed", byName["AGENTS.md global instructions"])
 	}
 	if byName["search_hub"] != "expected_observed" {
 		t.Errorf("search_hub status = %q, want expected_observed (hyphen→underscore match)", byName["search_hub"])

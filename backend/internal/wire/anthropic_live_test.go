@@ -27,7 +27,7 @@ import (
 // machine, using the identical proxy code path.)
 func TestNativeAnthropicPathThroughProxy(t *testing.T) {
 	tmp := t.TempDir()
-	const reqBody = `{"system":[{"type":"text","text":"You are Claude. Behavior gates apply."}],"tools":[{"name":"mcp__search-hub__query"},{"name":"mcp__issue-hub__list"}],"messages":[{"role":"user","content":"hi"}]}`
+	const reqBody = `{"system":[{"type":"text","text":"You are Claude. Run release smoke tests before launch."}],"tools":[{"name":"mcp__search-hub__query"},{"name":"mcp__issue-hub__list"}],"messages":[{"role":"user","content":"hi"}]}`
 
 	var gotBody []byte
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -83,8 +83,8 @@ func TestNativeAnthropicPathThroughProxy(t *testing.T) {
 	if len(caps) != 1 || caps[0].Endpoint != "anthropic/messages" {
 		t.Fatalf("expected 1 anthropic/messages capture, got %+v", caps)
 	}
-	if !caps[0].AgentsMarker || caps[0].MarkerSlot != "system" {
-		t.Errorf("marker = %v/%q, want true/system", caps[0].AgentsMarker, caps[0].MarkerSlot)
+	if caps[0].AllText == "" {
+		t.Errorf("capture should retain assembled text in memory")
 	}
 	if len(caps[0].ToolNames) != 2 {
 		t.Errorf("tools = %v, want 2", caps[0].ToolNames)

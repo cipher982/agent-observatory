@@ -17,8 +17,7 @@ type Capture struct {
 	Host         string
 	Endpoint     string   // logical kind, e.g. "anthropic/messages", "bedrock/invoke"
 	SystemPrompt string   // assembled system/instructions text
-	AgentsMarker bool     // doctrine marker present anywhere in the request
-	MarkerSlot   string   // "system" | "user" | ""
+	AllText      string   // assembled system + user text, in memory only
 	ToolNames    []string // tool/function names offered in the request
 	When         time.Time
 }
@@ -205,10 +204,6 @@ func stripPort(hostport string) string {
 }
 
 func (c Capture) summary() string {
-	loc := ""
-	if c.AgentsMarker {
-		loc = " in " + c.MarkerSlot
-	}
-	return fmt.Sprintf("system %d chars (AGENTS: %v%s), %d tools",
-		len([]rune(c.SystemPrompt)), c.AgentsMarker, loc, len(c.ToolNames))
+	return fmt.Sprintf("system %d chars, %d tools",
+		len([]rune(c.SystemPrompt)), len(c.ToolNames))
 }

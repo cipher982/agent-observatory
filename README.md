@@ -166,7 +166,7 @@ sequenceDiagram
     participant Provider as OpenAI / Anthropic / Bedrock
 
     Agent->>Proxy: HTTPS via local proxy<br/>trust injected by env vars
-    Note over Proxy: Extract derived facts:<br/>prompt length, marker presence,<br/>endpoint, tool names
+    Note over Proxy: Extract derived facts:<br/>prompt length, instruction match,<br/>endpoint, tool names
     Proxy->>Provider: Normal upstream TLS<br/>using system roots
     Provider-->>Proxy: Provider response
     Proxy-->>Agent: Response forwarded
@@ -178,8 +178,9 @@ Important boundaries:
 - The CA is not installed into the macOS System keychain.
 - Upstream provider TLS still uses normal system trust.
 - Raw prompt bodies are not persisted.
-- Persisted capture state stores derived facts: prompt length, marker presence,
-  endpoint, and tool names.
+- Persisted capture state stores derived facts: prompt length, endpoint, and
+  tool names. Instruction matching is computed against your resolved local
+  instruction files without storing raw prompt bodies.
 
 ## Compatibility
 

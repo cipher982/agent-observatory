@@ -13,14 +13,13 @@ struct LiveEvent: Identifiable, Codable {
     let endpoint: String
     let runtime: String
     let systemChars: Int
-    let agentsMarker: Bool
-    let markerSlot: String
+    let parsed: Bool
     let toolCount: Int
     let toolNames: [String]?
     let at: String
 
     private enum CodingKeys: String, CodingKey {
-        case host, endpoint, runtime, systemChars, agentsMarker, markerSlot, toolCount, toolNames, at
+        case host, endpoint, runtime, systemChars, parsed, toolCount, toolNames, at
     }
 }
 

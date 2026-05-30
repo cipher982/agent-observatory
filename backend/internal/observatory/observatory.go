@@ -45,10 +45,11 @@ func ExplainPath(path string) (resolver.Resolution, error) {
 	return resolver.LoadFromDisk(path)
 }
 
-// WireObservations is an optional hook: a capture backend (Phase D) can register
-// wire-derived observations keyed by session ID. LiveSessions folds them in as
-// VERIFIED evidence. Nil when no wire capture is active.
-var WireObservations func(sessionID string) []fact.Observation
+// WireObservations is an optional hook: a capture backend can register
+// wire-derived observations keyed by runtime/session/resolved context.
+// LiveSessions folds them in as VERIFIED evidence. Nil when no wire capture is
+// active.
+var WireObservations func(runtime, sessionID string, res resolver.Resolution) []fact.Observation
 
 // LiveSessions discovers recent agent sessions and runs the fact-level evidence
 // pipeline for each: resolver Expectations vs transcript (OBSERVED) + optional
@@ -75,10 +76,10 @@ func LiveSessions(limit int) ([]SessionView, error) {
 		return r
 	}
 
-	tsrc := evidence.TranscriptSource{}
 	views := make([]SessionView, 0, len(sessions))
 	for _, s := range sessions {
 		res := resolveCWD(s.CWD)
+		tsrc := evidence.TranscriptSource{Resolution: res}
 		views = append(views, buildView(s, res, tsrc))
 	}
 	return views, nil
@@ -93,18 +94,18 @@ func DemoSessions(limit int) []SessionView {
 	ts := time.Date(2026, 5, 30, 15, 0, 0, 0, time.UTC)
 	views := []SessionView{
 		demoSession("claude", "demo-claude-api", "api-service", "~/git/example/api-service", "2.1.156", ts, []fact.FactResult{
-			demoFact(fact.InstructionText, "claude", "AGENTS.md global doctrine", fact.StatusExpectedVerified, fact.Verified),
+			demoFact(fact.InstructionText, "claude", "AGENTS.md global instructions", fact.StatusExpectedVerified, fact.Verified),
 			demoFact(fact.ToolAvailable, "claude", "search_hub", fact.StatusExpectedVerified, fact.Verified),
 			demoFact(fact.ToolAvailable, "claude", "issue_hub", fact.StatusExpectedVerified, fact.Verified),
 			demoFact(fact.ToolAvailable, "claude", "deploy_hub", fact.StatusMissingExpected, fact.Observed),
 		}),
 		demoSession("codex", "demo-codex-web", "web-app", "~/git/example/web-app", "0.134.0", ts, []fact.FactResult{
-			demoFact(fact.InstructionText, "codex", "AGENTS.md global doctrine", fact.StatusExpectedVerified, fact.Verified),
+			demoFact(fact.InstructionText, "codex", "AGENTS.md global instructions", fact.StatusExpectedVerified, fact.Verified),
 			demoFact(fact.ToolAvailable, "codex", "docs", fact.StatusExpectedVerified, fact.Verified),
 			demoFact(fact.ToolAvailable, "codex", "reviewer", fact.StatusCoverageGap, fact.Observed),
 		}),
 		demoSession("claude", "demo-claude-worker", "worker", "~/git/example/worker", "2.1.156", ts, []fact.FactResult{
-			demoFact(fact.InstructionText, "claude", "AGENTS.md global doctrine", fact.StatusExpectedObserved, fact.Observed),
+			demoFact(fact.InstructionText, "claude", "AGENTS.md global instructions", fact.StatusExpectedObserved, fact.Observed),
 			demoFact(fact.ToolAvailable, "claude", "context_store", fact.StatusExpectedObserved, fact.Observed),
 			demoFact(fact.ToolAvailable, "claude", "ticket_hub", fact.StatusExpectedObserved, fact.Observed),
 		}),
@@ -148,7 +149,7 @@ func demoFact(kind fact.Kind, runtime, name string, status fact.Status, level fa
 	}
 	match := fact.MatchToolName
 	if kind == fact.InstructionText {
-		match = fact.MatchMarkerHeuristic
+		match = fact.MatchNormalizedDigest
 	}
 	var best *fact.Level
 	if status != fact.StatusCoverageGap {
@@ -194,7 +195,7 @@ func buildView(s transcript.Session, res resolver.Resolution, tsrc evidence.Tran
 
 	// Wire (VERIFIED) source, if a capture backend is registered.
 	if WireObservations != nil {
-		if wireObs := WireObservations(s.SessionID); len(wireObs) > 0 {
+		if wireObs := WireObservations(s.Runtime, s.SessionID, res); len(wireObs) > 0 {
 			observations = append(observations, wireObs...)
 			sourceStatus = append(sourceStatus, SourceStatus{Source: "wire", Available: true})
 		} else {

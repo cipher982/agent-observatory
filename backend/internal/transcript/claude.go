@@ -23,7 +23,7 @@ import (
 // Injected AGENTS.md / CLAUDE.md content:
 //   record type == "attachment" AND .attachment.type == "file"
 //   -> .attachment.content.file.{filePath, content, numLines, ...}
-//   The global prompt's marker "Behavior gates" lives in that content string.
+//   The injected instruction text lives in that content string.
 //
 // Tools:
 //   (a) Full registered catalog: attachment with .attachment.type ==
@@ -32,14 +32,14 @@ import (
 //       .message.content[] where block.type == "tool_use" -> block.name.
 
 type claudeRecord struct {
-	Type       string          `json:"type"`
-	CWD        string          `json:"cwd"`
-	GitBranch  string          `json:"gitBranch"`
-	SessionID  string          `json:"sessionId"`
-	Version    string          `json:"version"`
-	Timestamp  string          `json:"timestamp"`
-	Attachment *claudeAttach   `json:"attachment,omitempty"`
-	Message    *claudeMessage  `json:"message,omitempty"`
+	Type       string         `json:"type"`
+	CWD        string         `json:"cwd"`
+	GitBranch  string         `json:"gitBranch"`
+	SessionID  string         `json:"sessionId"`
+	Version    string         `json:"version"`
+	Timestamp  string         `json:"timestamp"`
+	Attachment *claudeAttach  `json:"attachment,omitempty"`
+	Message    *claudeMessage `json:"message,omitempty"`
 }
 
 type claudeAttach struct {

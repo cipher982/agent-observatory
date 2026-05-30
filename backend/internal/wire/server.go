@@ -11,6 +11,7 @@ import (
 
 	"github.com/cipher982/agent-observatory/backend/internal/evidence"
 	"github.com/cipher982/agent-observatory/backend/internal/fact"
+	"github.com/cipher982/agent-observatory/backend/internal/resolver"
 )
 
 // Server runs the intercepting proxy on a loopback port and accumulates the
@@ -144,10 +145,18 @@ func (s *Server) Captures() []Capture {
 	return out
 }
 
-// Observations converts captured wire requests into VERIFIED fact.Observations
-// for the given runtime + session. The wire is a COMPLETE-coverage source: it
-// sees the full assembled request, so it can assert both presence and absence.
+// Observations converts captured wire requests into VERIFIED tool observations
+// for the given runtime + session. Use ObservationsForResolution when resolved
+// instruction expectations are available too.
 func (s *Server) Observations(runtime, sessionID string) []fact.Observation {
+	return s.ObservationsForResolution(runtime, sessionID, resolver.Resolution{})
+}
+
+// ObservationsForResolution converts captured wire requests into VERIFIED
+// fact.Observations for the given runtime/session/resolved context. The wire is
+// a COMPLETE-coverage source for instruction text when the request body was
+// parsed in memory.
+func (s *Server) ObservationsForResolution(runtime, sessionID string, res resolver.Resolution) []fact.Observation {
 	s.mu.Lock()
 	caps := make([]Capture, len(s.captures))
 	copy(caps, s.captures)
@@ -156,23 +165,7 @@ func (s *Server) Observations(runtime, sessionID string) []fact.Observation {
 	var out []fact.Observation
 	for i, c := range caps {
 		ep := fact.Epoch{SessionID: sessionID, RequestID: fmt.Sprintf("wire-%d", i)}
-		// Doctrine: wire sees the literal assembled prompt → if the marker is
-		// present anywhere, that's a Complete-coverage Present (stronger than the
-		// transcript's heuristic). If absent, Complete-coverage Absent.
-		dk := fact.FactKey{Kind: fact.InstructionText, Runtime: runtime, Name: "AGENTS.md global doctrine"}
-		if c.AgentsMarker {
-			out = append(out, fact.Observation{
-				Key: dk, Polarity: fact.Present, Level: fact.Verified,
-				Source: "wire", Coverage: fact.CoverageComplete, Match: fact.MatchMarkerHeuristic, Epoch: ep,
-				Detail: "doctrine marker present in outbound request (" + c.MarkerSlot + ")",
-			})
-		} else {
-			out = append(out, fact.Observation{
-				Key: dk, Polarity: fact.Absent, Level: fact.Verified,
-				Source: "wire", Coverage: fact.CoverageComplete, Match: fact.MatchMarkerHeuristic, Epoch: ep,
-				Detail: "doctrine marker ABSENT from outbound request",
-			})
-		}
+		out = append(out, evidence.ObserveInstructionText("wire", fact.Verified, runtime, ep, c.AllText, res, true)...)
 		// Tools: each offered tool is a Present, Complete-coverage VERIFIED fact.
 		for _, raw := range c.ToolNames {
 			server := evidence.CanonTool(canonServer(raw))
