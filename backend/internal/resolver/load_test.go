@@ -1,0 +1,279 @@
+package resolver
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// writeFile creates parent dirs and writes content.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// fakeHome lays out a minimal ~/git/me layout under a temp dir and sets $HOME.
+// Returns the home path.
+func fakeHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	me := filepath.Join(home, "git", "me")
+
+	// Global doctrine AGENTS.md
+	writeFile(t, filepath.Join(me, "AGENTS.md"), "global doctrine with Behavior gates\n")
+
+	// Skill catalog: two skills with SKILL.md, one dir without (must be ignored),
+	// and a stray file (ignored).
+	writeFile(t, filepath.Join(me, "skills", "gmail", "SKILL.md"), "# gmail\n")
+	writeFile(t, filepath.Join(me, "skills", "hatch", "SKILL.md"), "# hatch\n")
+	if err := os.MkdirAll(filepath.Join(me, "skills", "empty-no-skillmd"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(me, "skills", "loose.txt"), "ignore me\n")
+
+	// Tool catalog: mcp-registry.toml with three servers.
+	writeFile(t, filepath.Join(me, "registry", "mcp-registry.toml"), `
+# registry
+[servers.slack-hub]
+command = "x"
+
+[servers.gdrive-hub]
+command = "y"
+
+[servers.search-hub]
+command = "z"
+`)
+	return home
+}
+
+func TestLoadFromDiskCatalogAndDefaults(t *testing.T) {
+	home := fakeHome(t)
+	me := filepath.Join(home, "git", "me")
+
+	res, err := LoadFromDisk(me)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Skills: catalog of gmail+hatch, default Disabled => none active, both present.
+	if len(res.Skills) != 2 {
+		t.Fatalf("expected 2 skills, got %d: %v", len(res.Skills), res.Skills)
+	}
+	for _, s := range res.Skills {
+		if s.Active {
+			t.Errorf("skill %q should be inactive by default (DefaultSkill=Disabled)", s.Name)
+		}
+	}
+
+	// Tools: catalog of three servers, default Enabled => all active.
+	if len(res.Tools) != 3 {
+		t.Fatalf("expected 3 tools, got %d: %v", len(res.Tools), res.Tools)
+	}
+	for _, tl := range res.Tools {
+		if !tl.Active {
+			t.Errorf("tool %q should be active by default (DefaultTool=Enabled)", tl.Name)
+		}
+	}
+
+	// Global knowledge layer must exist and have nonzero bytes.
+	var foundGlobal bool
+	for _, kl := range res.Knowledge {
+		if kl.Scope == ScopeGlobal {
+			foundGlobal = true
+			if !kl.Exists {
+				t.Errorf("global knowledge layer should exist")
+			}
+			if kl.Bytes == 0 {
+				t.Errorf("global knowledge bytes should be nonzero")
+			}
+		}
+	}
+	if !foundGlobal {
+		t.Errorf("no global knowledge layer found")
+	}
+}
+
+// TestLoadFromDiskOverlayPrecedence: a global overlay enables a skill and disables
+// a tool; a workspace overlay flips them; a repo overlay flips one again.
+func TestLoadFromDiskOverlayPrecedence(t *testing.T) {
+	home := fakeHome(t)
+	me := filepath.Join(home, "git", "me")
+
+	// Global overlay at ~/git/me/agents.yaml
+	writeFile(t, filepath.Join(me, "agents.yaml"), `
+skills:
+  gmail: enabled
+tools:
+  slack-hub: disabled
+`)
+
+	// A workspace "zerg" with its own AGENTS.md and overlay.
+	zerg := filepath.Join(home, "git", "zerg")
+	writeFile(t, filepath.Join(zerg, "AGENTS.md"), "zerg workspace knowledge\n")
+	writeFile(t, filepath.Join(zerg, "agents.yaml"), `
+skills:
+  gmail: disabled
+tools:
+  slack-hub: enabled
+`)
+
+	// A repo under zerg with its own AGENTS.md + overlay re-enabling gmail.
+	repo := filepath.Join(zerg, "longhouse")
+	writeFile(t, filepath.Join(repo, "AGENTS.md"), "longhouse repo knowledge\n")
+	writeFile(t, filepath.Join(repo, "agents.yaml"), `
+skills:
+  gmail: enabled
+`)
+
+	res, err := LoadFromDisk(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.Workspace != "zerg" {
+		t.Errorf("Workspace = %q, want zerg", res.Workspace)
+	}
+
+	gmail := findItem(t, res.Skills, "gmail")
+	if !gmail.Active {
+		t.Errorf("gmail should be re-enabled at repo, got inactive (why=%q)", gmail.WhyInactive)
+	}
+	if gmail.Origin != ScopeRepo {
+		t.Errorf("gmail.Origin = %v, want repo", gmail.Origin)
+	}
+	// Override chain: global(enabled) then workspace(disabled).
+	if len(gmail.Overrode) != 2 {
+		t.Errorf("gmail.Overrode len = %d, want 2: %#v", len(gmail.Overrode), gmail.Overrode)
+	}
+
+	slack := findItem(t, res.Tools, "slack-hub")
+	if !slack.Active {
+		t.Errorf("slack-hub should be enabled at workspace (overriding global disable)")
+	}
+	if slack.Origin != ScopeWorkspace {
+		t.Errorf("slack-hub.Origin = %v, want workspace", slack.Origin)
+	}
+
+	// Knowledge layers: global, workspace:zerg, repo:longhouse all present.
+	labels := map[string]bool{}
+	for _, kl := range res.Knowledge {
+		labels[kl.Label] = kl.Exists
+	}
+	for _, want := range []string{"global", "workspace:zerg", "repo:longhouse"} {
+		exists, ok := labels[want]
+		if !ok {
+			t.Errorf("missing knowledge layer %q (have %v)", want, labels)
+			continue
+		}
+		if !exists {
+			t.Errorf("knowledge layer %q should exist on disk", want)
+		}
+	}
+}
+
+// TestLoadFromDiskMissingKnowledge: a workspace without AGENTS.md yields a layer
+// with Exists=false (the missing-detection path).
+func TestLoadFromDiskMissingKnowledge(t *testing.T) {
+	home := fakeHome(t)
+
+	// workspace "ghost" dir exists (so WorkspaceFor returns it) but no AGENTS.md.
+	repo := filepath.Join(home, "git", "ghost", "app")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := LoadFromDisk(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Workspace != "ghost" {
+		t.Errorf("Workspace = %q, want ghost", res.Workspace)
+	}
+
+	var wsLayer *KnowledgeLayer
+	var repoLayer *KnowledgeLayer
+	for i := range res.Knowledge {
+		switch res.Knowledge[i].Label {
+		case "workspace:ghost":
+			wsLayer = &res.Knowledge[i]
+		case "repo:app":
+			repoLayer = &res.Knowledge[i]
+		}
+	}
+	if wsLayer == nil {
+		t.Fatalf("expected workspace:ghost knowledge layer, have %v", res.Knowledge)
+	}
+	if wsLayer.Exists {
+		t.Errorf("workspace:ghost AGENTS.md should be detected MISSING")
+	}
+	if wsLayer.Bytes != 0 {
+		t.Errorf("missing layer should report 0 bytes, got %d", wsLayer.Bytes)
+	}
+	if repoLayer == nil || repoLayer.Exists {
+		t.Errorf("repo:app AGENTS.md should be detected missing, got %#v", repoLayer)
+	}
+}
+
+// TestLoadFromDiskNoCatalogFiles: missing skills dir / registry yields nil catalogs
+// (no panic, empty resolution).
+func TestLoadFromDiskNoCatalogFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	me := filepath.Join(home, "git", "me")
+	if err := os.MkdirAll(me, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res, err := LoadFromDisk(me)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Skills) != 0 || len(res.Tools) != 0 {
+		t.Errorf("expected empty catalogs, got skills=%v tools=%v", res.Skills, res.Tools)
+	}
+}
+
+func TestParseActivation(t *testing.T) {
+	cases := map[string]Activation{
+		"enabled": Enabled, "enable": Enabled, "on": Enabled, "true": Enabled, "yes": Enabled,
+		"ENABLED": Enabled, " On ": Enabled,
+		"disabled": Disabled, "disable": Disabled, "off": Disabled, "false": Disabled, "no": Disabled,
+		"": Unset, "maybe": Unset, "weird": Unset,
+	}
+	for in, want := range cases {
+		if got := parseActivation(in); got != want {
+			t.Errorf("parseActivation(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestLoadToolCatalog(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "mcp-registry.toml")
+	writeFile(t, p, `
+[servers.a]
+[servers.b]
+[other.c]
+not a header
+[servers.d]
+`)
+	got := loadToolCatalog(p)
+	want := []string{"a", "b", "d"}
+	if len(got) != len(want) {
+		t.Fatalf("loadToolCatalog = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("loadToolCatalog[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	// missing file => nil
+	if loadToolCatalog(filepath.Join(dir, "nope.toml")) != nil {
+		t.Errorf("missing registry should yield nil")
+	}
+}

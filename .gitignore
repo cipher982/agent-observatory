@@ -1,0 +1,13 @@
+# Go build artifacts
+/backend/agents
+backend/agents
+/app/agents
+
+# Xcode
+*.xcodeproj
+DerivedData/
+.DS_Store
+xcuserdata/
+
+# wire capture state (derived facts; still local-only)
+backend/agents

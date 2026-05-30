@@ -1,0 +1,52 @@
+name: Observatory
+options:
+  bundleIdPrefix: io.drose.observatory
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    GENERATE_INFOPLIST_FILE: YES
+    PRODUCT_NAME: Observatory
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+    # Sandbox OFF for v1: the app spawns a helper process and talks to localhost.
+    # Tighten later with a proper XPC/helper entitlement if App Store distribution
+    # is ever wanted.
+    ENABLE_APP_SANDBOX: NO
+
+targets:
+  Observatory:
+    type: application
+    platform: macOS
+    sources:
+      - path: Observatory
+    info:
+      path: Observatory/Info.plist
+      properties:
+        CFBundleDisplayName: Agent Observatory
+        LSMinimumSystemVersion: "26.0"
+        NSHumanReadableCopyright: "Agent Context Observatory"
+        # Allow plaintext loopback HTTP to the local engine.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        CODE_SIGN_STYLE: Automatic
+    preBuildScripts:
+      - name: Build & embed Go engine
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          BACKEND="$SRCROOT/../backend"
+          RES="$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          mkdir -p "$RES"
+          cd "$BACKEND"
+          # Build a universal-ish arm64 helper for the bundle.
+          /usr/local/go/bin/go build -o "$RES/agents" ./cmd/agents 2>/dev/null \
+            || go build -o "$RES/agents" ./cmd/agents
+          echo "embedded engine at $RES/agents"
