@@ -1,6 +1,6 @@
 # Agent Context Observatory Release Readiness
 
-Status: active
+Status: release-ready
 Target: Hacker News-ready local-first macOS developer app
 
 ## Executive Summary
@@ -118,13 +118,22 @@ Verification:
 
 ### Phase 2: Product Onboarding And Demo
 
+Status: complete
+
 Acceptance criteria:
 - App has a polished first-run/empty state that explains the value in user terms.
 - Demo mode is available without environment-variable knowledge.
 - Demo feed is deterministic and visually strong enough for screenshots.
 - README points users to demo mode before advanced proxy setup.
 
+Verification:
+- The app defaults to Demo mode with an in-app Demo/Live segmented control.
+- Packaged app smoke test showed the demo live feed rendering wire cards.
+- README now leads with the product problem and demo-first quick start.
+
 ### Phase 3: Packaging And Release Commands
+
+Status: complete
 
 Acceptance criteria:
 - One command builds backend helper and app bundle.
@@ -132,7 +141,14 @@ Acceptance criteria:
 - Release artifacts exclude local state and private data.
 - App version is consistent across backend, project config, and Info.plist.
 
+Verification:
+- `make release` created the app zip, CLI binary, and `SHA256SUMS` in `dist/`.
+- CLI reports `agents-observatory 0.1.0`.
+- Built app bundle reports `CFBundleShortVersionString = 0.1.0`.
+
 ### Phase 4: Security And Trust
+
+Status: complete
 
 Acceptance criteria:
 - README clearly explains what is captured, what is never persisted, how proxy
@@ -140,12 +156,27 @@ Acceptance criteria:
 - CLI status explains install state and next action in plain language.
 - Install/uninstall QA remains green.
 
+Verification:
+- README includes the local-first security model and raw-prompt persistence boundary.
+- Install/status/uninstall CLI output is plain-language and reversible.
+- `make release` reran backend install lifecycle QA successfully.
+
 ### Phase 5: Final Release QA
+
+Status: complete
 
 Acceptance criteria:
 - Backend QA, app build, launch smoke test, and screenshot review all pass.
 - README and launch note are accurate against the built artifact.
 - Final git status contains only intentional source/release changes.
+
+Verification:
+- `make release` passed.
+- Packaged app launched from `dist/Observatory.app` and rendered the demo feed.
+- Release artifacts:
+  - `dist/Agent-Context-Observatory-0.1.0-macos.zip`
+  - `dist/agents`
+  - `dist/SHA256SUMS`
 
 ## Verification Commands
 
