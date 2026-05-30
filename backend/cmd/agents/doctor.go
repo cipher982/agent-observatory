@@ -60,8 +60,10 @@ func runDoctor(args []string) int {
 	}
 
 	fmt.Println("After `agents install`, newly launched agents route through Observatory automatically.")
+	fmt.Println("Verified capture uses a local MITM hop between the agent process and Observatory.")
 	fmt.Println("Trust is injected through NODE_EXTRA_CA_CERTS / SSL_CERT_FILE / AWS_CA_BUNDLE,")
 	fmt.Println("never by installing Observatory's CA into the macOS System keychain.")
+	fmt.Println("Provider-bound upstream TLS still uses the normal system trust store.")
 	return 0
 }
 

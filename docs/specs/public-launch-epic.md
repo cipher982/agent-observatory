@@ -185,7 +185,7 @@ Verification:
 
 ### Phase 4: Capture And Install Hardening
 
-Status: pending
+Status: complete
 
 Acceptance:
 - Provider parser tests cover OpenAI Responses/chat, Anthropic Messages, and
@@ -198,6 +198,8 @@ Acceptance:
 Verification:
 - `make backend-qa`
 - Manual `agents status` smoke check against a fake or local target.
+- `agents status` distinguishes installed, partially installed, and absent states.
+- `agents doctor wire` directly names the local MITM hop and upstream TLS boundary.
 
 ### Phase 5: Distribution Readiness
 

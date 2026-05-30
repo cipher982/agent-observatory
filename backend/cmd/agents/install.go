@@ -106,6 +106,17 @@ func runStatus(args []string) int {
 		fmt.Println("newly launched agents should be captured at the verified tier")
 		return 0
 	}
+	if s.ProfileBlock || s.PlistExists || s.CAExists {
+		fmt.Println("\noverall: partially installed")
+		switch {
+		case s.ProfileBlock && s.PlistExists && !s.CAExists:
+			fmt.Println("the install is present; the daemon has not created the local CA yet")
+			fmt.Println("open Agent Observatory or wait a moment, then run `agents status` again")
+		default:
+			fmt.Println("run `agents install` to repair, or `agents uninstall` to remove the partial setup")
+		}
+		return 1
+	}
 	fmt.Println("\noverall: not fully installed")
 	fmt.Println("run `agents install` to capture newly launched agents automatically")
 	return 1
