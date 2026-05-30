@@ -35,8 +35,8 @@ struct LiveFeedView: View {
             Image(systemName: "waveform.path.ecg")
                 .foregroundStyle(.cyan)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Live wire activity").font(.headline)
-                Text("in-flight LLM requests, captured as they leave the machine")
+                Text(engine.demoMode ? "Demo wire activity" : "Live wire activity").font(.headline)
+                Text(engine.demoMode ? "synthetic capture stream" : "in-flight LLM requests")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -53,11 +53,9 @@ struct LiveFeedView: View {
         VStack(spacing: 14) {
             Image(systemName: "antenna.radiowaves.left.and.right")
                 .font(.system(size: 44)).foregroundStyle(.secondary)
-            Text("Waiting for agent requests…").font(.title3.weight(.semibold))
-            Text("Launch an agent through the observatory proxy and its outbound\nLLM requests will stream in here in realtime.")
-                .font(.callout).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            if !engine.proxyCommand.isEmpty {
+            Text(engine.demoMode ? "Starting demo stream…" : "Waiting for agent requests…")
+                .font(.title3.weight(.semibold))
+            if !engine.demoMode, !engine.proxyCommand.isEmpty {
                 Text(engine.proxyCommand)
                     .font(.caption.monospaced())
                     .padding(12)

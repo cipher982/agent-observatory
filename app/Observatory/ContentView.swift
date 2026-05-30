@@ -1,5 +1,12 @@
 import SwiftUI
 
+enum ObservatoryMode: String, CaseIterable, Identifiable {
+    case demo = "Demo"
+    case live = "Live"
+
+    var id: String { rawValue }
+}
+
 // The Observatory's beautiful realtime face. A NavigationSplitView with:
 //  • a hero background (animated mesh gradient) extended under the chrome
 //  • a sidebar of live agent sessions (glass cards)
@@ -9,6 +16,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(EngineClient.self) private var engine
     @State private var selection: SessionView.ID?
+    @State private var mode: ObservatoryMode = .demo
 
     var body: some View {
         NavigationSplitView {
@@ -21,6 +29,30 @@ struct ContentView: View {
             }
         }
         .navigationTitle("Agent Observatory")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Mode", selection: $mode) {
+                    Label("Demo", systemImage: "sparkles").tag(ObservatoryMode.demo)
+                    Label("Live", systemImage: "dot.radiowaves.left.and.right").tag(ObservatoryMode.live)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 168)
+            }
+            ToolbarItem {
+                Button {
+                    Task { await engine.refresh() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Refresh sessions")
+            }
+        }
+        .onAppear { engine.start(demo: mode == .demo) }
+        .onDisappear { engine.stop() }
+        .onChange(of: mode) { _, next in
+            engine.restart(demo: next == .demo)
+            selection = nil
+        }
     }
 
     // MARK: sidebar — live agent sessions
@@ -36,7 +68,7 @@ struct ContentView: View {
             case .running:
                 List(selection: $selection) {
                     Section {
-                        LiveStatusRow(connected: engine.streamConnected, eventCount: engine.liveEvents.count)
+                        LiveStatusRow(mode: mode, connected: engine.streamConnected, eventCount: engine.liveEvents.count)
                             .listRowSeparator(.hidden)
                     }
                     Section("Agents") {
@@ -72,6 +104,7 @@ struct ContentView: View {
 
 // A small glass status row showing the live stream heartbeat.
 struct LiveStatusRow: View {
+    let mode: ObservatoryMode
     let connected: Bool
     let eventCount: Int
     @State private var breathe = false
@@ -88,7 +121,7 @@ struct LiveStatusRow: View {
                 Text(connected ? "LIVE" : "connecting…")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(connected ? .green : .secondary)
-                Text("\(eventCount) wire events").font(.caption2).foregroundStyle(.secondary)
+                Text("\(mode.rawValue.lowercased()) · \(eventCount) wire events").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
             Image(systemName: "antenna.radiowaves.left.and.right")

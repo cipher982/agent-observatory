@@ -8,8 +8,6 @@ struct ObservatoryApp: App {
         WindowGroup {
             ContentView()
                 .environment(engine)
-                .onAppear { engine.start() }
-                .onDisappear { engine.stop() }
                 .frame(minWidth: 900, minHeight: 600)
         }
         .windowStyle(.hiddenTitleBar)

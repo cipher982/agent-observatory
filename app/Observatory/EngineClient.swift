@@ -30,6 +30,7 @@ final class EngineClient {
     enum State: Equatable { case starting, running, failed(String) }
 
     private(set) var state: State = .starting
+    private(set) var demoMode = true
     private(set) var sessions: [SessionView] = []
     private(set) var liveEvents: [LiveEvent] = []      // newest first
     private(set) var lastUpdated: Date?
@@ -51,12 +52,25 @@ final class EngineClient {
 
     var baseURL: URL { URL(string: "http://127.0.0.1:\(apiPort)")! }
 
-    func start() {
-        startEngineIfNeeded()
+    func start(demo: Bool = true) {
+        demoMode = demo
+        startEngineIfNeeded(demo: demo)
         pollTask?.cancel()
         pollTask = Task { [weak self] in await self?.pollLoop() }
         streamTask?.cancel()
         streamTask = Task { [weak self] in await self?.streamLoop() }
+    }
+
+    func restart(demo: Bool) {
+        stop()
+        state = .starting
+        sessions = []
+        liveEvents = []
+        lastUpdated = nil
+        proxyCommand = ""
+        streamConnected = false
+        pulse = 0
+        start(demo: demo)
     }
 
     func stop() {
@@ -64,12 +78,13 @@ final class EngineClient {
         process?.terminate(); process = nil
     }
 
-    private func startEngineIfNeeded() {
+    private func startEngineIfNeeded(demo: Bool) {
+        guard process == nil else { return }
         guard let helper = Self.bundledHelperURL() else { return }
         let p = Process()
         p.executableURL = helper
         var monitorArgs = ["monitor", "--port", "\(apiPort)", "--proxy-port", "\(proxyPort)"]
-        if ProcessInfo.processInfo.environment["OBSERVATORY_DEMO"] == "1" { monitorArgs.append("--demo") }
+        if demo { monitorArgs.append("--demo") }
         p.arguments = monitorArgs
         p.standardOutput = Pipe(); p.standardError = Pipe()
         do { try p.run(); process = p }
