@@ -63,6 +63,9 @@ Artifacts are written to `dist/`:
 - `agents`
 - `SHA256SUMS`
 
+The local release build is ad-hoc signed. A public binary download should be
+Developer ID signed and notarized before broad distribution.
+
 ## CLI
 
 The app bundles the Go engine, but the backend is also usable directly:

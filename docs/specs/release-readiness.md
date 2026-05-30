@@ -40,6 +40,9 @@ for public scrutiny.
 ## Non-Goals For This Release
 
 - App Store distribution.
+- Notarized binary distribution. The repo builds an ad-hoc local zip; publishing
+  a low-friction public download still requires a Developer ID Application
+  certificate and notarization.
 - Multi-user/team cloud observability.
 - Centralized hosted storage.
 - Full canonical context control/upstreaming. This release observes first.
@@ -129,7 +132,7 @@ Acceptance criteria:
 - README points users to demo mode before advanced proxy setup.
 
 Verification:
-- The app defaults to Demo mode with an in-app Demo/Live segmented control.
+- The app defaults to Demo mode with a menu bar mode switch for Demo/Live.
 - Packaged app smoke test showed the demo live feed rendering wire cards.
 - README now leads with the product problem and demo-first quick start.
 
@@ -147,6 +150,7 @@ Verification:
 - `make release` created the app zip, CLI binary, and `SHA256SUMS` in `dist/`.
 - CLI reports `agents-observatory 0.1.0`.
 - Built app bundle reports `CFBundleShortVersionString = 0.1.0`.
+- Built app bundle embeds `AppIcon.icns` and declares `CFBundleIconName = AppIcon`.
 
 ### Phase 4: Security And Trust
 
