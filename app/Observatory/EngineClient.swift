@@ -35,7 +35,7 @@ final class EngineClient {
     private(set) var sessions: [SessionView] = []
     private(set) var liveEvents: [LiveEvent] = []      // newest first
     private(set) var lastUpdated: Date?
-    private(set) var proxyCommand: String = ""          // shown in the GUI
+    private(set) var installCommand = "agents install && agents status"
     private(set) var streamConnected = false
     private(set) var pulse = 0                           // increments on each live event (drives animations)
 
@@ -69,7 +69,7 @@ final class EngineClient {
         sessions = []
         liveEvents = []
         lastUpdated = nil
-        proxyCommand = ""
+        installCommand = "agents install && agents status"
         streamConnected = false
         pulse = 0
         start(mode: mode)
@@ -113,7 +113,6 @@ final class EngineClient {
             if await healthOK() { break }
             try? await Task.sleep(for: .milliseconds(attempt < 3 ? 200 : 500))
         }
-        await loadProxyCoords()
         while !Task.isCancelled {
             await refresh()
             try? await Task.sleep(for: .seconds(4))
@@ -126,14 +125,6 @@ final class EngineClient {
         guard let (_, resp) = try? await session.data(for: req),
               let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return false }
         return true
-    }
-
-    private func loadProxyCoords() async {
-        let url = baseURL.appendingPathComponent("api/proxy")
-        guard let (data, _) = try? await session.data(from: url),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-              let proxy = obj["httpsProxy"], let ca = obj["caPath"] else { return }
-        proxyCommand = "HTTPS_PROXY=\(proxy) NODE_EXTRA_CA_CERTS=\(ca) SSL_CERT_FILE=\(ca) AWS_CA_BUNDLE=\(ca) claude -p \"hello\""
     }
 
     func refresh() async {

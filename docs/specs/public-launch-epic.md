@@ -139,7 +139,7 @@ Verification:
 
 ### Phase 1: Launch Spec And Repo Hygiene
 
-Status: in progress
+Status: complete
 
 Acceptance:
 - This epic exists and is committed.
@@ -150,10 +150,11 @@ Acceptance:
 Verification:
 - `git status --short`
 - `git diff --check`
+- Committed in `9cff9c0`.
 
 ### Phase 2: First-Run And Demo Polish
 
-Status: pending
+Status: complete
 
 Acceptance:
 - Demo/live labels use product language, not implementation language.
@@ -165,10 +166,11 @@ Acceptance:
 Verification:
 - `make app-build`
 - Launch app in demo mode and capture a fresh screenshot.
+- Demo mode serves sanitized sample sessions instead of reading local transcripts.
 
 ### Phase 3: Public Launch Assets
 
-Status: pending
+Status: complete
 
 Acceptance:
 - `docs/screenshots/live-feed.png` is generated from sanitized demo data.
@@ -179,6 +181,7 @@ Acceptance:
 Verification:
 - Window-only screenshot capture.
 - Public hygiene scan over docs.
+- README references `docs/screenshots/live-feed.png`.
 
 ### Phase 4: Capture And Install Hardening
 

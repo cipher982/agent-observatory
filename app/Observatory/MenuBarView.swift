@@ -13,8 +13,8 @@ struct ObservatoryMenuBarView: View {
 
         Divider()
 
-        Text(engine.mode == .demo ? "Demo mode" : "Live mode")
-        Text(engine.streamConnected ? "Stream connected" : "Stream reconnecting")
+        Text(engine.mode == .demo ? "Demo ready" : "Live capture")
+        Text(engine.streamConnected ? "Connected" : "Reconnecting")
 
         Button(engine.mode == .demo ? "Switch to Live Mode" : "Switch to Demo Mode") {
             engine.restart(mode: engine.mode == .demo ? .live : .demo)

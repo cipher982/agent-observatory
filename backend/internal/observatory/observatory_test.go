@@ -127,6 +127,24 @@ func TestLiveSessionsFactPipeline(t *testing.T) {
 	}
 }
 
+func TestDemoSessionsAreSanitized(t *testing.T) {
+	views := DemoSessions(10)
+	if len(views) == 0 {
+		t.Fatal("expected demo sessions")
+	}
+	for _, v := range views {
+		if v.Workspace == "private-a" || v.Workspace == "private-b" {
+			t.Fatalf("demo session leaked private workspace name: %+v", v)
+		}
+		if v.Session.Path != "" {
+			t.Fatalf("demo session should not point at a local transcript path: %+v", v.Session)
+		}
+		if v.SummaryLevel == "none" {
+			t.Fatalf("demo session should have visible evidence: %+v", v)
+		}
+	}
+}
+
 func mustMkdir(t *testing.T, p string) {
 	t.Helper()
 	if err := os.MkdirAll(p, 0o755); err != nil {

@@ -10,6 +10,8 @@ Today, agent context is mostly invisible. You find out it was wrong only after
 the agent misses a rule, lacks a tool, or quietly uses stale instructions. This
 app makes that state visible.
 
+![Agent Context Observatory live feed](docs/screenshots/live-feed.png)
+
 ## What It Shows
 
 - Recent local agent sessions from on-disk transcripts.
@@ -22,12 +24,15 @@ app makes that state visible.
 
 ## Quick Start
 
-Requirements:
+Native app requirements:
 
 - macOS 26+
 - Xcode 26+
 - XcodeGen
 - Go 1.26+
+
+The Go backend and CLI can be built separately on any platform supported by Go
+1.26. The macOS 26 requirement is for the native Liquid Glass SwiftUI app.
 
 Build and run the app:
 
@@ -39,6 +44,13 @@ open /tmp/observatory-dd/Build/Products/Debug/Observatory.app
 The app opens in **Demo** mode by default so the live feed is immediately useful.
 Use the menu bar extra to switch Demo/Live mode, refresh sessions, show the main
 window, or quit.
+
+CLI-only smoke test:
+
+```bash
+cd backend
+go run ./cmd/agents monitor --demo
+```
 
 ## Build Everything
 
@@ -117,8 +129,25 @@ that CA into the macOS System keychain. The proxy's upstream connection to
 OpenAI, Anthropic, Bedrock, and other providers uses the normal system trust
 store.
 
+Yes, this is a local MITM proxy for the hop between the agent process and the
+provider. That explicit local interception is what makes verified HTTPS body
+inspection possible; the CA is local, the proxy is local, and upstream provider
+TLS still uses normal system roots.
+
 Persisted capture state stores derived facts such as prompt length, marker
 presence, endpoint, and tool names. Raw prompt bodies are not persisted.
+
+## Compatibility
+
+| Surface | Status | Notes |
+| --- | --- | --- |
+| Claude transcript discovery | Observed | Reads local JSONL transcript context and complete tool catalogs when available. |
+| Codex transcript discovery | Observed | Reads local session JSONL; tool evidence is positive-only when only invoked tools are present. |
+| Antigravity transcript discovery | Partial | Discovers sessions from history; opaque `.pb` conversation bodies are not parsed. |
+| OpenAI chat/responses body shapes | Verified parser coverage | Covered by backend proxy parser tests. |
+| Anthropic Messages body shape | Verified parser coverage | Covered by native Anthropic proxy-path test. |
+| Bedrock Anthropic body shape | Verified parser coverage | Covered by backend proxy parser tests. |
+| Install-once ambient capture | Local QA | Install/status/uninstall are covered by repeated fake-home lifecycle tests. |
 
 ## Architecture
 

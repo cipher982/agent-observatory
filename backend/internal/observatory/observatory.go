@@ -8,6 +8,8 @@
 package observatory
 
 import (
+	"time"
+
 	"github.com/cipher982/agent-observatory/backend/internal/evidence"
 	"github.com/cipher982/agent-observatory/backend/internal/fact"
 	"github.com/cipher982/agent-observatory/backend/internal/resolver"
@@ -80,6 +82,97 @@ func LiveSessions(limit int) ([]SessionView, error) {
 		views = append(views, buildView(s, res, tsrc))
 	}
 	return views, nil
+}
+
+// DemoSessions returns sanitized sessions for demo mode. It deliberately avoids
+// reading local transcripts so public screenshots never expose workstation data.
+func DemoSessions(limit int) []SessionView {
+	if limit <= 0 || limit > 6 {
+		limit = 6
+	}
+	ts := time.Date(2026, 5, 30, 15, 0, 0, 0, time.UTC)
+	views := []SessionView{
+		demoSession("claude", "demo-claude-api", "api-service", "~/git/example/api-service", "2.1.156", ts, []fact.FactResult{
+			demoFact(fact.InstructionText, "claude", "AGENTS.md global doctrine", fact.StatusExpectedVerified, fact.Verified),
+			demoFact(fact.ToolAvailable, "claude", "search_hub", fact.StatusExpectedVerified, fact.Verified),
+			demoFact(fact.ToolAvailable, "claude", "issue_hub", fact.StatusExpectedVerified, fact.Verified),
+			demoFact(fact.ToolAvailable, "claude", "deploy_hub", fact.StatusMissingExpected, fact.Observed),
+		}),
+		demoSession("codex", "demo-codex-web", "web-app", "~/git/example/web-app", "0.134.0", ts, []fact.FactResult{
+			demoFact(fact.InstructionText, "codex", "AGENTS.md global doctrine", fact.StatusExpectedVerified, fact.Verified),
+			demoFact(fact.ToolAvailable, "codex", "docs", fact.StatusExpectedVerified, fact.Verified),
+			demoFact(fact.ToolAvailable, "codex", "reviewer", fact.StatusCoverageGap, fact.Observed),
+		}),
+		demoSession("claude", "demo-claude-worker", "worker", "~/git/example/worker", "2.1.156", ts, []fact.FactResult{
+			demoFact(fact.InstructionText, "claude", "AGENTS.md global doctrine", fact.StatusExpectedObserved, fact.Observed),
+			demoFact(fact.ToolAvailable, "claude", "context_store", fact.StatusExpectedObserved, fact.Observed),
+			demoFact(fact.ToolAvailable, "claude", "ticket_hub", fact.StatusExpectedObserved, fact.Observed),
+		}),
+	}
+	if limit > len(views) {
+		limit = len(views)
+	}
+	return views[:limit]
+}
+
+func demoSession(runtime, id, workspace, cwd, version string, ts time.Time, facts []fact.FactResult) SessionView {
+	return SessionView{
+		Session: transcript.Session{
+			Runtime:      runtime,
+			SessionID:    id,
+			CWD:          cwd,
+			GitRepo:      workspace,
+			GitBranch:    "main",
+			StartedAt:    ts,
+			LastActivity: ts,
+			Version:      version,
+			RecordCount:  42,
+		},
+		Workspace:    workspace,
+		SummaryLevel: summaryLevel(facts),
+		Facts:        facts,
+		ActiveSkills: []string{"code-review", "release-check"},
+		ActiveTools:  []string{"search_hub", "docs", "reviewer"},
+		SourceStatus: []SourceStatus{
+			{Source: "transcript", Available: true},
+			{Source: "wire", Available: true},
+		},
+	}
+}
+
+func demoFact(kind fact.Kind, runtime, name string, status fact.Status, level fact.Level) fact.FactResult {
+	lvl := level
+	polarity := fact.Present
+	if status == fact.StatusMissingExpected {
+		polarity = fact.Absent
+	}
+	match := fact.MatchToolName
+	if kind == fact.InstructionText {
+		match = fact.MatchMarkerHeuristic
+	}
+	var best *fact.Level
+	if status != fact.StatusCoverageGap {
+		best = &lvl
+	}
+	return fact.FactResult{
+		Key: fact.FactKey{Kind: kind, Runtime: runtime, Name: name},
+		Expectation: &fact.Expectation{
+			Key:      fact.FactKey{Kind: kind, Runtime: runtime, Name: name},
+			Required: true,
+			Origin:   "demo",
+		},
+		Observations: []fact.Observation{{
+			Key:      fact.FactKey{Kind: kind, Runtime: runtime, Name: name},
+			Polarity: polarity,
+			Level:    level,
+			Source:   "demo",
+			Coverage: fact.CoverageComplete,
+			Match:    match,
+			Epoch:    fact.Epoch{SessionID: "demo"},
+		}},
+		Status:    status,
+		BestLevel: best,
+	}
 }
 
 // buildView runs the evidence pipeline for one session.

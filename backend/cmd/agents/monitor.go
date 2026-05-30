@@ -68,6 +68,10 @@ func runMonitor(args []string) int {
 		writeJSON(w, map[string]any{"ok": true, "mode": "monitor", "proxy": "http://" + proxyAddr, "caPath": srv.CAPath()})
 	})
 	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
+		if demo {
+			writeJSON(w, observatory.DemoSessions(limit))
+			return
+		}
 		views, err := observatory.LiveSessions(limit)
 		if err != nil {
 			writeErr(w, err)

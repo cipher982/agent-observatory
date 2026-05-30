@@ -30,4 +30,8 @@ What is not included yet:
 - App Store distribution.
 - Canonical context management across every runtime.
 
-The project is meant to be the missing inspector/debugger for agent context.
+Repo: https://github.com/cipher982/agent-observatory
+
+The project is meant to be the missing inspector/debugger for agent context. I
+would especially like feedback on the install-once capture model, the local MITM
+security framing, and which agent runtimes should be hardened first.

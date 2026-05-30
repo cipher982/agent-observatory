@@ -99,10 +99,10 @@ struct LiveStatusRow: View {
                 .scaleEffect(breathe ? 1.25 : 1.0)
                 .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: breathe)
             VStack(alignment: .leading, spacing: 1) {
-                Text(connected ? "LIVE" : "connecting…")
+                Text(connected ? statusTitle : "RECONNECTING")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(connected ? .green : .secondary)
-                Text("\(mode.rawValue.lowercased()) · \(eventCount) wire events").font(.caption2).foregroundStyle(.secondary)
+                Text("\(modeLabel) · \(eventCount) captured requests").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
             Image(systemName: "antenna.radiowaves.left.and.right")
@@ -114,6 +114,9 @@ struct LiveStatusRow: View {
         .onAppear { breathe = connected }
         .onChange(of: connected) { _, c in breathe = c }
     }
+
+    private var statusTitle: String { mode == .demo ? "DEMO READY" : "LIVE READY" }
+    private var modeLabel: String { mode == .demo ? "sample traffic" : "installed capture" }
 }
 
 // Animated mesh-gradient hero, extended under the window chrome, that subtly

@@ -35,8 +35,8 @@ struct LiveFeedView: View {
             Image(systemName: "waveform.path.ecg")
                 .foregroundStyle(.cyan)
             VStack(alignment: .leading, spacing: 1) {
-                Text(engine.demoMode ? "Demo wire activity" : "Live wire activity").font(.headline)
-                Text(engine.demoMode ? "synthetic capture stream" : "in-flight LLM requests")
+                Text(engine.demoMode ? "Demo activity" : "Live activity").font(.headline)
+                Text(engine.demoMode ? "sample agent requests" : "requests captured after install")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -53,10 +53,15 @@ struct LiveFeedView: View {
         VStack(spacing: 14) {
             Image(systemName: "antenna.radiowaves.left.and.right")
                 .font(.system(size: 44)).foregroundStyle(.secondary)
-            Text(engine.demoMode ? "Starting demo stream…" : "Waiting for agent requests…")
+            Text(engine.demoMode ? "Starting sample traffic…" : "Waiting for installed agent traffic…")
                 .font(.title3.weight(.semibold))
-            if !engine.demoMode, !engine.proxyCommand.isEmpty {
-                Text(engine.proxyCommand)
+            if !engine.demoMode {
+                Text("Run install once, then restart your agent normally. Observatory captures newly launched agents automatically.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 560)
+                Text(engine.installCommand)
                     .font(.caption.monospaced())
                     .padding(12)
                     .frame(maxWidth: 560)
@@ -122,7 +127,7 @@ struct LiveRequestCard: View {
     private var doctrineBadge: some View {
         HStack(spacing: 3) {
             Image(systemName: event.agentsMarker ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-            Text(event.agentsMarker ? "AGENTS.md ✓" : "no doctrine")
+            Text(event.agentsMarker ? "instructions present" : "instructions missing")
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(event.agentsMarker ? .green : .orange)
