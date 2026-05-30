@@ -11,14 +11,14 @@ import (
 // TestPersistRedactsBodies proves the v2 privacy rule: persisted captures store
 // only DERIVED facts (length, marker, tool names) — never the raw system prompt.
 func TestPersistRedactsBodies(t *testing.T) {
-	secret := "TOP SECRET PROMPT with Behavior gates and private data"
+	sensitive := "SENSITIVE PROMPT with Behavior gates and private data"
 	caps := []Capture{{
 		Host:         "bedrock-runtime.us-east-1.amazonaws.com",
 		Endpoint:     "bedrock/invoke",
-		SystemPrompt: secret,
+		SystemPrompt: sensitive,
 		AgentsMarker: true,
 		MarkerSlot:   "user",
-		ToolNames:    []string{"mcp__slack__search"},
+		ToolNames:    []string{"mcp__search__query"},
 		When:         time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC),
 	}}
 
@@ -28,7 +28,7 @@ func TestPersistRedactsBodies(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(path)
-	if strings.Contains(string(raw), secret) {
+	if strings.Contains(string(raw), sensitive) {
 		t.Fatalf("persisted file leaked the raw system prompt — privacy violation")
 	}
 	if !strings.Contains(string(raw), "bedrock/invoke") || !strings.Contains(string(raw), "agentsMarker") {

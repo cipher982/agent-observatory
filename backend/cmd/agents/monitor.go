@@ -211,11 +211,11 @@ func runDemoInjector(srv *wire.Server) {
 	}
 	samples := []sample{
 		{"bedrock-runtime.us-east-1.amazonaws.com", "bedrock/invoke", 5548, true, "user",
-			[]string{"Bash", "Edit", "Read", "Grep", "Glob", "Write", "mcp__hatch__hatch_codex", "mcp__longhouse__recall"}},
+			[]string{"Bash", "Edit", "Read", "Grep", "Glob", "Write", "mcp__review-agent__ask", "mcp__context-store__recall"}},
 		{"api.openai.com", "openai/responses", 41833, true, "user",
-			[]string{"exec_command", "apply_patch", "update_plan", "mcp__context7__query-docs", "mcp__slack-hub__search"}},
+			[]string{"exec_command", "apply_patch", "update_plan", "mcp__docs__query", "mcp__search-hub__search"}},
 		{"api.anthropic.com", "anthropic/messages", 6120, true, "system",
-			[]string{"str_replace", "bash", "mcp__gdrive-hub__list_files", "mcp__docket-hub__list_items"}},
+			[]string{"str_replace", "bash", "mcp__drive__list_files", "mcp__tickets__list_items"}},
 		{"bedrock-runtime.us-east-1.amazonaws.com", "bedrock/invoke", 5212, true, "user",
 			[]string{"Read", "Edit", "Bash", "mcp__image-hub__generate_image"}},
 		{"api.openai.com", "openai/responses", 38904, false, "",

@@ -98,10 +98,10 @@ func TestResolveNarrowestWins(t *testing.T) {
 	}
 	overlays := []Overlay{
 		ov(ScopeGlobal, "global", map[string]Activation{"sk": Enabled}, nil),
-		ov(ScopeWorkspace, "workspace:zerg", map[string]Activation{"sk": Disabled}, nil),
-		ov(ScopeRepo, "repo:longhouse", map[string]Activation{"sk": Enabled}, nil),
+		ov(ScopeWorkspace, "workspace:workspace", map[string]Activation{"sk": Disabled}, nil),
+		ov(ScopeRepo, "repo:example-service", map[string]Activation{"sk": Enabled}, nil),
 	}
-	res := Resolve("/h/git/zerg/longhouse", "/h", cat, overlays, nil)
+	res := Resolve("/h/git/workspace/example-service", "/h", cat, overlays, nil)
 	sk := findItem(t, res.Skills, "sk")
 
 	if !sk.Active {
@@ -110,7 +110,7 @@ func TestResolveNarrowestWins(t *testing.T) {
 	if sk.Origin != ScopeRepo {
 		t.Errorf("sk.Origin = %v, want ScopeRepo", sk.Origin)
 	}
-	if sk.OriginLabel != "repo:longhouse" {
+	if sk.OriginLabel != "repo:example-service" {
 		t.Errorf("sk.OriginLabel = %q", sk.OriginLabel)
 	}
 	if sk.State != Enabled {
@@ -119,7 +119,7 @@ func TestResolveNarrowestWins(t *testing.T) {
 	// Overrode should contain the two broader layers, broadest-first.
 	wantOverrode := []ScopeState{
 		{Scope: ScopeGlobal, Label: "global", State: Enabled},
-		{Scope: ScopeWorkspace, Label: "workspace:zerg", State: Disabled},
+		{Scope: ScopeWorkspace, Label: "workspace:workspace", State: Disabled},
 	}
 	if !reflect.DeepEqual(sk.Overrode, wantOverrode) {
 		t.Errorf("sk.Overrode = %#v\nwant %#v", sk.Overrode, wantOverrode)
@@ -129,18 +129,18 @@ func TestResolveNarrowestWins(t *testing.T) {
 // TestResolveDisabledAtNarrowest: a narrower layer disabling an item that broader
 // layers enabled => inactive with WhyInactive naming the disabling layer.
 func TestResolveDisabledAtNarrowest(t *testing.T) {
-	cat := Catalog{Tools: []string{"slack-hub"}, DefaultTool: Enabled}
+	cat := Catalog{Tools: []string{"search-hub"}, DefaultTool: Enabled}
 	overlays := []Overlay{
-		ov(ScopeGlobal, "global", nil, map[string]Activation{"slack-hub": Enabled}),
-		ov(ScopeRepo, "repo:secret", nil, map[string]Activation{"slack-hub": Disabled}),
+		ov(ScopeGlobal, "global", nil, map[string]Activation{"search-hub": Enabled}),
+		ov(ScopeRepo, "repo:private", nil, map[string]Activation{"search-hub": Disabled}),
 	}
-	res := Resolve("/h/git/zerg/secret", "/h", cat, overlays, nil)
-	it := findItem(t, res.Tools, "slack-hub")
+	res := Resolve("/h/git/workspace/private", "/h", cat, overlays, nil)
+	it := findItem(t, res.Tools, "search-hub")
 	if it.Active {
-		t.Fatalf("slack-hub should be disabled at repo")
+		t.Fatalf("search-hub should be disabled at repo")
 	}
-	if it.WhyInactive != "disabled at repo:secret" {
-		t.Errorf("WhyInactive = %q, want 'disabled at repo:secret'", it.WhyInactive)
+	if it.WhyInactive != "disabled at repo:private" {
+		t.Errorf("WhyInactive = %q, want 'disabled at repo:private'", it.WhyInactive)
 	}
 	if it.Origin != ScopeRepo {
 		t.Errorf("Origin = %v, want repo", it.Origin)
@@ -177,7 +177,7 @@ func TestResolveUnsetLayersSkipped(t *testing.T) {
 // and both kinds carry the right Kind tag and are sorted by name.
 func TestResolveMixedSkillsAndTools(t *testing.T) {
 	cat := Catalog{
-		Skills:       []string{"zeta", "alpha"},
+		Skills:       []string{"omega", "alpha"},
 		Tools:        []string{"yutool", "btool"},
 		DefaultSkill: Disabled,
 		DefaultTool:  Disabled,
@@ -190,7 +190,7 @@ func TestResolveMixedSkillsAndTools(t *testing.T) {
 	res := Resolve("/h/git/me", "/h", cat, overlays, nil)
 
 	// sorted by name
-	if res.Skills[0].Name != "alpha" || res.Skills[1].Name != "zeta" {
+	if res.Skills[0].Name != "alpha" || res.Skills[1].Name != "omega" {
 		t.Errorf("skills not sorted: %v", ActiveNames(res.Skills))
 	}
 	if res.Tools[0].Name != "btool" || res.Tools[1].Name != "yutool" {
@@ -209,8 +209,8 @@ func TestResolveMixedSkillsAndTools(t *testing.T) {
 	if findItem(t, res.Skills, "alpha").Active != true {
 		t.Errorf("alpha should be active")
 	}
-	if findItem(t, res.Skills, "zeta").Active != false {
-		t.Errorf("zeta should be inactive (default disabled)")
+	if findItem(t, res.Skills, "omega").Active != false {
+		t.Errorf("omega should be inactive (default disabled)")
 	}
 	if findItem(t, res.Tools, "btool").Active != true {
 		t.Errorf("btool should be active")
@@ -224,10 +224,10 @@ func TestResolveMixedSkillsAndTools(t *testing.T) {
 // overlay's label (TrimPrefix "workspace:").
 func TestResolveWorkspaceFromOverlay(t *testing.T) {
 	cat := Catalog{}
-	overlays := []Overlay{ov(ScopeWorkspace, "workspace:zerg", nil, nil)}
-	res := Resolve("/h/git/zerg/x", "/h", cat, overlays, nil)
-	if res.Workspace != "zerg" {
-		t.Errorf("res.Workspace = %q, want zerg", res.Workspace)
+	overlays := []Overlay{ov(ScopeWorkspace, "workspace:workspace", nil, nil)}
+	res := Resolve("/h/git/workspace/x", "/h", cat, overlays, nil)
+	if res.Workspace != "workspace" {
+		t.Errorf("res.Workspace = %q, want workspace", res.Workspace)
 	}
 }
 
@@ -287,21 +287,21 @@ func TestResolveFourLayerOverrideChain(t *testing.T) {
 }
 
 func TestWorkspaceFor(t *testing.T) {
-	home := "/Users/d"
+	home := "/home/d"
 	cases := []struct {
 		name string
 		path string
 		want string
 	}{
-		{"repo me", "/Users/d/git/me", "me"},
-		{"workspace zerg via longhouse", "/Users/d/git/zerg/longhouse", "zerg"},
-		{"deep nesting", "/Users/d/git/zerg/longhouse/internal/x", "zerg"},
-		{"exactly git/x", "/Users/d/git/foo", "foo"},
-		{"git root itself", "/Users/d/git", ""},
-		{"outside git", "/Users/d/Documents/proj", ""},
+		{"repo me", "/home/d/git/me", "me"},
+		{"workspace via service", "/home/d/git/workspace/example-service", "workspace"},
+		{"deep nesting", "/home/d/git/workspace/example-service/internal/x", "workspace"},
+		{"exactly git/x", "/home/d/git/foo", "foo"},
+		{"git root itself", "/home/d/git", ""},
+		{"outside git", "/home/d/Documents/proj", ""},
 		{"completely outside home", "/tmp/elsewhere", ""},
-		{"trailing slash", "/Users/d/git/zerg/", "zerg"},
-		{"dotdot normalized", "/Users/d/git/zerg/longhouse/..", "zerg"},
+		{"trailing slash", "/home/d/git/workspace/", "workspace"},
+		{"dotdot normalized", "/home/d/git/workspace/example-service/..", "workspace"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

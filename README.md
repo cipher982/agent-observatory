@@ -10,8 +10,6 @@ Today, agent context is mostly invisible. You find out it was wrong only after
 the agent misses a rule, lacks a tool, or quietly uses stale instructions. This
 app makes that state visible.
 
-![Live feed](docs/screenshots/v2-live-feed.png)
-
 ## What It Shows
 
 - Recent local agent sessions from on-disk transcripts.
@@ -73,7 +71,7 @@ The app bundles the Go engine, but the backend is also usable directly:
 ```bash
 cd backend
 go run ./cmd/agents sessions --limit 20
-go run ./cmd/agents context explain ~/git/my-project
+go run ./cmd/agents context explain /path/to/project
 go run ./cmd/agents monitor --demo
 go run ./cmd/agents doctor wire
 ```

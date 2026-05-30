@@ -13,12 +13,12 @@ func TestExplainPath(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	me := filepath.Join(home, "git", "me")
-	mustMkdir(t, filepath.Join(me, "skills", "docket"))
+	mustMkdir(t, filepath.Join(me, "skills", "triage"))
 	mustMkdir(t, filepath.Join(me, "registry"))
 	mustWrite(t, filepath.Join(me, "AGENTS.md"), "# doctrine\nBehavior gates\n")
-	mustWrite(t, filepath.Join(me, "skills", "docket", "SKILL.md"), "---\nname: docket\n---\n")
+	mustWrite(t, filepath.Join(me, "skills", "triage", "SKILL.md"), "---\nname: triage\n---\n")
 	mustWrite(t, filepath.Join(me, "registry", "mcp-registry.toml"),
-		"[servers.hatch]\ncommand=\"x\"\n[servers.longhouse]\ncommand=\"y\"\n")
+		"[servers.reviewer]\ncommand=\"x\"\n[servers.context-store]\ncommand=\"y\"\n")
 
 	res, err := ExplainPath(me)
 	if err != nil {
@@ -31,7 +31,7 @@ func TestExplainPath(t *testing.T) {
 		t.Errorf("expected an existing global knowledge layer, got %+v", res.Knowledge)
 	}
 	if len(res.Tools) != 2 {
-		t.Errorf("tools = %d, want 2 (hatch, longhouse)", len(res.Tools))
+		t.Errorf("tools = %d, want 2 (reviewer, context-store)", len(res.Tools))
 	}
 	// Default tool activation is Enabled, so both tools should be active.
 	active := 0
@@ -83,17 +83,17 @@ func TestLiveSessionsFactPipeline(t *testing.T) {
 	mustMkdir(t, filepath.Join(me, "registry"))
 	mustWrite(t, filepath.Join(me, "AGENTS.md"), "# doctrine\nBehavior gates\n")
 	mustWrite(t, filepath.Join(me, "registry", "mcp-registry.toml"),
-		"[servers.slack-hub]\ncommand=\"x\"\n[servers.ghost-tool]\ncommand=\"y\"\n")
+		"[servers.search-hub]\ncommand=\"x\"\n[servers.ghost-tool]\ncommand=\"y\"\n")
 
 	// A Claude transcript whose cwd is ~/git/me, with a complete catalog that
-	// contains slack-hub (hyphen form) but NOT ghost-tool → ghost-tool must drift.
+	// contains search-hub (hyphen form) but NOT ghost-tool → ghost-tool must drift.
 	enc := "-Users-" // not load-bearing; discovery uses dir listing
 	_ = enc
 	proj := filepath.Join(home, ".claude", "projects", "p")
 	mustMkdir(t, proj)
 	mustWrite(t, filepath.Join(proj, "c.jsonl"),
 		`{"type":"attachment","attachment":{"type":"file","content":{"file":{"filePath":"/x/AGENTS.md","content":"doctrine Behavior gates"}}},"cwd":"`+me+`","gitBranch":"main","sessionId":"sess-1","version":"2.1","timestamp":"2026-05-29T10:00:00Z"}
-{"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":["mcp__slack-hub__search","Bash"]},"timestamp":"2026-05-29T10:00:01Z"}`)
+{"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":["mcp__search-hub__query","Bash"]},"timestamp":"2026-05-29T10:00:01Z"}`)
 
 	views, err := LiveSessions(10)
 	if err != nil {
@@ -119,8 +119,8 @@ func TestLiveSessionsFactPipeline(t *testing.T) {
 	if byName["AGENTS.md global doctrine"] != "expected_observed" {
 		t.Errorf("doctrine status = %q, want expected_observed", byName["AGENTS.md global doctrine"])
 	}
-	if byName["slack_hub"] != "expected_observed" {
-		t.Errorf("slack_hub status = %q, want expected_observed (hyphen→underscore match)", byName["slack_hub"])
+	if byName["search_hub"] != "expected_observed" {
+		t.Errorf("search_hub status = %q, want expected_observed (hyphen→underscore match)", byName["search_hub"])
 	}
 	if byName["ghost_tool"] != "missing_expected" {
 		t.Errorf("ghost_tool status = %q, want missing_expected (complete-catalog drift)", byName["ghost_tool"])

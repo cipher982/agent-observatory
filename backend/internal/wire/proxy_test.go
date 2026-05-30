@@ -32,14 +32,14 @@ func TestParseBodyVariants(t *testing.T) {
 		},
 		{
 			name: "bedrock-invoke", host: "bedrock-runtime.us-east-1.amazonaws.com",
-			path: "/model/global.anthropic.claude-opus-4-8/invoke-with-response-stream",
-			body: `{"anthropic_version":"bedrock-2023-05-31","system":[{"type":"text","text":"Behavior gates here"}],"tools":[{"name":"mcp__slack__search"}],"messages":[]}`,
+			path:     "/model/global.anthropic.claude-opus-4-8/invoke-with-response-stream",
+			body:     `{"anthropic_version":"bedrock-2023-05-31","system":[{"type":"text","text":"Behavior gates here"}],"tools":[{"name":"mcp__search__query"}],"messages":[]}`,
 			wantTool: true, wantMarker: true, wantSlot: "system",
 		},
 		{
 			name: "aws-external-anthropic", host: "aws-external-anthropic.us-east-1.api.aws",
-			path: "/v1/messages",
-			body: `{"system":"x","tools":[{"name":"t"}],"messages":[{"role":"user","content":"...Behavior gates..."}]}`,
+			path:     "/v1/messages",
+			body:     `{"system":"x","tools":[{"name":"t"}],"messages":[{"role":"user","content":"...Behavior gates..."}]}`,
 			wantTool: true, wantMarker: true, wantSlot: "user",
 		},
 		{
@@ -80,7 +80,7 @@ func TestEndToEndInterception(t *testing.T) {
 	tmp := t.TempDir()
 
 	// 1) Upstream: a real TLS server that echoes whether it got the exact body.
-	const reqBody = `{"system":"sys with Behavior gates","tools":[{"name":"mcp__hatch__codex"}],"messages":[]}`
+	const reqBody = `{"system":"sys with Behavior gates","tools":[{"name":"mcp__reviewer__ask"}],"messages":[]}`
 	var gotUpstreamBody []byte
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUpstreamBody, _ = io.ReadAll(r.Body)
@@ -157,8 +157,8 @@ func TestEndToEndInterception(t *testing.T) {
 	if !c.AgentsMarker {
 		t.Errorf("capture missed AGENTS marker")
 	}
-	if len(c.ToolNames) != 1 || c.ToolNames[0] != "mcp__hatch__codex" {
-		t.Errorf("capture tools = %v, want [mcp__hatch__codex]", c.ToolNames)
+	if len(c.ToolNames) != 1 || c.ToolNames[0] != "mcp__reviewer__ask" {
+		t.Errorf("capture tools = %v, want [mcp__reviewer__ask]", c.ToolNames)
 	}
 
 	// 4c) The capture must convert into a VERIFIED observation.

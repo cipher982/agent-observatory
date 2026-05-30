@@ -28,7 +28,7 @@ func statusFor(results []FactResult, k FactKey) Status {
 
 // Expected + transcript-observed present → expected_observed.
 func TestExpectedObserved(t *testing.T) {
-	k := toolKey("claude", "slack-hub")
+	k := toolKey("claude", "search-hub")
 	r := Merge([]Expectation{expect(k)},
 		[]Observation{obsPresent(k, Observed, "transcript", CoverageComplete, Epoch{SessionID: "s1"})})
 	if got := statusFor(r, k); got != StatusExpectedObserved {
@@ -38,7 +38,7 @@ func TestExpectedObserved(t *testing.T) {
 
 // Expected + wire-verified present → expected_verified, best level Verified.
 func TestExpectedVerified(t *testing.T) {
-	k := toolKey("codex", "hatch")
+	k := toolKey("codex", "reviewer")
 	r := Merge([]Expectation{expect(k)},
 		[]Observation{obsPresent(k, Verified, "wire", CoverageComplete, Epoch{SessionID: "s1", RequestID: "r1"})})
 	fr := r[0]
@@ -54,9 +54,9 @@ func TestExpectedVerified(t *testing.T) {
 // mention an expected tool must NOT produce missing_expected — it's a coverage
 // gap, because absence proves nothing for positive-only sources.
 func TestPositiveOnlyNoFalseMissing(t *testing.T) {
-	k := toolKey("codex", "slack-hub")
-	// transcript saw OTHER tools but not slack-hub; positive-only means we record
-	// no observation for slack-hub at all (absence isn't asserted).
+	k := toolKey("codex", "search-hub")
+	// transcript saw OTHER tools but not search-hub; positive-only means we record
+	// no observation for search-hub at all (absence isn't asserted).
 	r := Merge([]Expectation{expect(k)}, nil)
 	if got := statusFor(r, k); got != StatusCoverageGap {
 		t.Errorf("status = %q, want coverage_gap (positive-only absence is not drift)", got)
@@ -88,7 +88,7 @@ func TestConflictSameEpochBothComplete(t *testing.T) {
 
 // NOT a conflict: disagreement but one source is positive-only (can't anchor).
 func TestNoConflictWhenNotComplete(t *testing.T) {
-	k := toolKey("codex", "longhouse")
+	k := toolKey("codex", "context-store")
 	ep := Epoch{SessionID: "s1"}
 	r := Merge([]Expectation{expect(k)}, []Observation{
 		obsPresent(k, Observed, "transcript", CoveragePositiveOnly, ep),
@@ -125,7 +125,7 @@ func TestUnexpected(t *testing.T) {
 
 // Verified beats Observed for the same present fact.
 func TestVerifiedBeatsObserved(t *testing.T) {
-	k := toolKey("codex", "hatch")
+	k := toolKey("codex", "reviewer")
 	ep := Epoch{SessionID: "s1"}
 	r := Merge([]Expectation{expect(k)}, []Observation{
 		obsPresent(k, Observed, "transcript", CoverageComplete, ep),

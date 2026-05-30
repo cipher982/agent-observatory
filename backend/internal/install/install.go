@@ -24,7 +24,7 @@ import (
 const (
 	beginMarker = "# >>> agent-observatory >>>"
 	endMarker   = "# <<< agent-observatory <<<"
-	labelPrefix = "io.drose.observatory"
+	labelPrefix = "com.github.cipher982.agentobservatory"
 )
 
 // EnvVars are the variables the install sets globally so new agents route

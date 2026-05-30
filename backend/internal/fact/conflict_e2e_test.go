@@ -28,7 +28,7 @@ func TestConflictE2E(t *testing.T) {
 
 	// Inverse guard: a positive-only transcript absence + wire present must NOT
 	// be a conflict (positive-only can't anchor), and must resolve to verified.
-	tool := FactKey{Kind: ToolAvailable, Runtime: "codex", Name: "slack_hub"}
+	tool := FactKey{Kind: ToolAvailable, Runtime: "codex", Name: "search_hub"}
 	res2 := Merge(
 		[]Expectation{{Key: tool, Required: true}},
 		[]Observation{

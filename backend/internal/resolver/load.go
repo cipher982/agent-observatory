@@ -10,8 +10,8 @@ import (
 )
 
 // LoadFromDisk builds the catalog, knowledge layers, and overlays for a path by
-// reading David's real ~/git/me layout, then resolves. It is the production entry
-// point used by the CLI and GUI.
+// reading the local agent-context layout, then resolves. It is the production
+// entry point used by the CLI and GUI.
 //
 // Layout assumptions (v1):
 //   - Global doctrine:   <home>/git/me/AGENTS.md
@@ -38,7 +38,7 @@ func LoadFromDisk(path string) (Resolution, error) {
 		Skills:       loadSkillCatalog(filepath.Join(me, "skills")),
 		Tools:        loadToolCatalog(filepath.Join(me, "registry", "mcp-registry.toml")),
 		DefaultSkill: Disabled, // skills are explicit-on by default
-		DefaultTool:  Enabled,  // David's habit: tools on everywhere unless disabled
+		DefaultTool:  Enabled,  // project default: tools on everywhere unless disabled
 	}
 
 	ws := WorkspaceFor(abs, home)

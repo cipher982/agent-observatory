@@ -1,6 +1,6 @@
 name: Observatory
 options:
-  bundleIdPrefix: io.drose.observatory
+  bundleIdPrefix: com.github.cipher982.agentobservatory
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true

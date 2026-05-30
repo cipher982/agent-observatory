@@ -27,7 +27,7 @@ import (
 // machine, using the identical proxy code path.)
 func TestNativeAnthropicPathThroughProxy(t *testing.T) {
 	tmp := t.TempDir()
-	const reqBody = `{"system":[{"type":"text","text":"You are Claude. Behavior gates apply."}],"tools":[{"name":"mcp__slack-hub__search"},{"name":"mcp__docket-hub__list"}],"messages":[{"role":"user","content":"hi"}]}`
+	const reqBody = `{"system":[{"type":"text","text":"You are Claude. Behavior gates apply."}],"tools":[{"name":"mcp__search-hub__query"},{"name":"mcp__issue-hub__list"}],"messages":[{"role":"user","content":"hi"}]}`
 
 	var gotBody []byte
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,13 +91,13 @@ func TestNativeAnthropicPathThroughProxy(t *testing.T) {
 	}
 	// VERIFIED observation with canonicalized tool server names.
 	obs := srv.Observations("claude", "sess-anthropic")
-	var slack bool
+	var search bool
 	for _, o := range obs {
-		if o.Key.Kind == fact.ToolAvailable && o.Key.Name == "slack_hub" && o.Level == fact.Verified {
-			slack = true
+		if o.Key.Kind == fact.ToolAvailable && o.Key.Name == "search_hub" && o.Level == fact.Verified {
+			search = true
 		}
 	}
-	if !slack {
-		t.Errorf("expected VERIFIED slack_hub tool observation, got %+v", obs)
+	if !search {
+		t.Errorf("expected VERIFIED search_hub tool observation, got %+v", obs)
 	}
 }

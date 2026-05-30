@@ -30,8 +30,8 @@ func fakeHome(t *testing.T) string {
 
 	// Skill catalog: two skills with SKILL.md, one dir without (must be ignored),
 	// and a stray file (ignored).
-	writeFile(t, filepath.Join(me, "skills", "gmail", "SKILL.md"), "# gmail\n")
-	writeFile(t, filepath.Join(me, "skills", "hatch", "SKILL.md"), "# hatch\n")
+	writeFile(t, filepath.Join(me, "skills", "summarizer", "SKILL.md"), "# summarizer\n")
+	writeFile(t, filepath.Join(me, "skills", "reviewer", "SKILL.md"), "# reviewer\n")
 	if err := os.MkdirAll(filepath.Join(me, "skills", "empty-no-skillmd"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -40,13 +40,13 @@ func fakeHome(t *testing.T) string {
 	// Tool catalog: mcp-registry.toml with three servers.
 	writeFile(t, filepath.Join(me, "registry", "mcp-registry.toml"), `
 # registry
-[servers.slack-hub]
+[servers.search-hub]
 command = "x"
 
-[servers.gdrive-hub]
+[servers.docs-hub]
 command = "y"
 
-[servers.search-hub]
+[servers.issue-hub]
 command = "z"
 `)
 	return home
@@ -61,7 +61,7 @@ func TestLoadFromDiskCatalogAndDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Skills: catalog of gmail+hatch, default Disabled => none active, both present.
+	// Skills: catalog of summarizer+reviewer, default Disabled => none active, both present.
 	if len(res.Skills) != 2 {
 		t.Fatalf("expected 2 skills, got %d: %v", len(res.Skills), res.Skills)
 	}
@@ -108,27 +108,27 @@ func TestLoadFromDiskOverlayPrecedence(t *testing.T) {
 	// Global overlay at ~/git/me/agents.yaml
 	writeFile(t, filepath.Join(me, "agents.yaml"), `
 skills:
-  gmail: enabled
+  summarizer: enabled
 tools:
-  slack-hub: disabled
+  search-hub: disabled
 `)
 
-	// A workspace "zerg" with its own AGENTS.md and overlay.
-	zerg := filepath.Join(home, "git", "zerg")
-	writeFile(t, filepath.Join(zerg, "AGENTS.md"), "zerg workspace knowledge\n")
-	writeFile(t, filepath.Join(zerg, "agents.yaml"), `
+	// A workspace with its own AGENTS.md and overlay.
+	workspace := filepath.Join(home, "git", "workspace")
+	writeFile(t, filepath.Join(workspace, "AGENTS.md"), "workspace knowledge\n")
+	writeFile(t, filepath.Join(workspace, "agents.yaml"), `
 skills:
-  gmail: disabled
+  summarizer: disabled
 tools:
-  slack-hub: enabled
+  search-hub: enabled
 `)
 
-	// A repo under zerg with its own AGENTS.md + overlay re-enabling gmail.
-	repo := filepath.Join(zerg, "longhouse")
-	writeFile(t, filepath.Join(repo, "AGENTS.md"), "longhouse repo knowledge\n")
+	// A repo under the workspace with its own AGENTS.md + overlay re-enabling the skill.
+	repo := filepath.Join(workspace, "example-service")
+	writeFile(t, filepath.Join(repo, "AGENTS.md"), "example service repo knowledge\n")
 	writeFile(t, filepath.Join(repo, "agents.yaml"), `
 skills:
-  gmail: enabled
+  summarizer: enabled
 `)
 
 	res, err := LoadFromDisk(repo)
@@ -136,36 +136,36 @@ skills:
 		t.Fatal(err)
 	}
 
-	if res.Workspace != "zerg" {
-		t.Errorf("Workspace = %q, want zerg", res.Workspace)
+	if res.Workspace != "workspace" {
+		t.Errorf("Workspace = %q, want workspace", res.Workspace)
 	}
 
-	gmail := findItem(t, res.Skills, "gmail")
-	if !gmail.Active {
-		t.Errorf("gmail should be re-enabled at repo, got inactive (why=%q)", gmail.WhyInactive)
+	summarizer := findItem(t, res.Skills, "summarizer")
+	if !summarizer.Active {
+		t.Errorf("summarizer should be re-enabled at repo, got inactive (why=%q)", summarizer.WhyInactive)
 	}
-	if gmail.Origin != ScopeRepo {
-		t.Errorf("gmail.Origin = %v, want repo", gmail.Origin)
+	if summarizer.Origin != ScopeRepo {
+		t.Errorf("summarizer.Origin = %v, want repo", summarizer.Origin)
 	}
 	// Override chain: global(enabled) then workspace(disabled).
-	if len(gmail.Overrode) != 2 {
-		t.Errorf("gmail.Overrode len = %d, want 2: %#v", len(gmail.Overrode), gmail.Overrode)
+	if len(summarizer.Overrode) != 2 {
+		t.Errorf("summarizer.Overrode len = %d, want 2: %#v", len(summarizer.Overrode), summarizer.Overrode)
 	}
 
-	slack := findItem(t, res.Tools, "slack-hub")
-	if !slack.Active {
-		t.Errorf("slack-hub should be enabled at workspace (overriding global disable)")
+	search := findItem(t, res.Tools, "search-hub")
+	if !search.Active {
+		t.Errorf("search-hub should be enabled at workspace (overriding global disable)")
 	}
-	if slack.Origin != ScopeWorkspace {
-		t.Errorf("slack-hub.Origin = %v, want workspace", slack.Origin)
+	if search.Origin != ScopeWorkspace {
+		t.Errorf("search-hub.Origin = %v, want workspace", search.Origin)
 	}
 
-	// Knowledge layers: global, workspace:zerg, repo:longhouse all present.
+	// Knowledge layers: global, workspace:workspace, repo:example-service all present.
 	labels := map[string]bool{}
 	for _, kl := range res.Knowledge {
 		labels[kl.Label] = kl.Exists
 	}
-	for _, want := range []string{"global", "workspace:zerg", "repo:longhouse"} {
+	for _, want := range []string{"global", "workspace:workspace", "repo:example-service"} {
 		exists, ok := labels[want]
 		if !ok {
 			t.Errorf("missing knowledge layer %q (have %v)", want, labels)

@@ -11,15 +11,15 @@ import (
 
 // Local fixtures (mirroring the real transcript shapes).
 // Claude: a "file" attachment with the doctrine marker + a complete tool catalog
-// via deferred_tools_delta. Uses the HYPHEN form (mcp__slack-hub__) to exercise
+// via deferred_tools_delta. Uses the HYPHEN form (mcp__search-hub__) to exercise
 // Claude-style canonicalization.
 const claudeJSONL = `{"type":"attachment","attachment":{"type":"file","content":{"file":{"filePath":"/x/AGENTS.md","content":"doctrine with Behavior gates inside"}}},"cwd":"/h/git/me","gitBranch":"main","sessionId":"s1","version":"2.1.156","timestamp":"2026-05-01T10:00:00Z"}
-{"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":["mcp__slack-hub__search","mcp__docket-hub__list","Bash"]},"timestamp":"2026-05-01T10:00:01Z"}`
+{"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":["mcp__search-hub__query","mcp__issue-hub__list","Bash"]},"timestamp":"2026-05-01T10:00:01Z"}`
 
 // Codex: session_meta + a user message carrying the marker + one invoked tool.
 const codexJSONL = `{"timestamp":"2026-05-02T09:00:00Z","type":"session_meta","payload":{"id":"s1","cwd":"/h/git/me","cli_version":"0.134.0","base_instructions":{"text":"base"}}}
 {"timestamp":"2026-05-02T09:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"...Behavior gates..."}]}}
-{"timestamp":"2026-05-02T09:00:02Z","type":"response_item","payload":{"type":"function_call","name":"mcp__hatch__hatch_codex"}}`
+{"timestamp":"2026-05-02T09:00:02Z","type":"response_item","payload":{"type":"function_call","name":"mcp__reviewer__ask"}}`
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
@@ -97,8 +97,8 @@ func TestObserveToolAbsence(t *testing.T) {
 	writeFile(t, cp, claudeJSONL)
 	cs := transcript.Session{Runtime: "claude", Path: cp, SessionID: "s1"}
 
-	// claudeJSONL's catalog contains mcp__slack-hub__ but NOT mcp__ghost-tool__.
-	absent := ObserveToolAbsence(cs, []string{"slack_hub", "ghost_tool"})
+	// claudeJSONL's catalog contains mcp__search-hub__ but NOT mcp__ghost-tool__.
+	absent := ObserveToolAbsence(cs, []string{"search_hub", "ghost_tool"})
 	var ghostAbsent bool
 	for _, o := range absent {
 		if o.Key.Name == "ghost_tool" {
@@ -107,8 +107,8 @@ func TestObserveToolAbsence(t *testing.T) {
 				t.Errorf("ghost_tool obs = %+v, want absent/complete", o)
 			}
 		}
-		if o.Key.Name == "slack_hub" {
-			t.Errorf("slack_hub IS present in catalog; must not be reported absent")
+		if o.Key.Name == "search_hub" {
+			t.Errorf("search_hub IS present in catalog; must not be reported absent")
 		}
 	}
 	if !ghostAbsent {
@@ -119,19 +119,19 @@ func TestObserveToolAbsence(t *testing.T) {
 	xp := filepath.Join(dir, "codex.jsonl")
 	writeFile(t, xp, codexJSONL)
 	xs := transcript.Session{Runtime: "codex", Path: xp, SessionID: "s1"}
-	if got := ObserveToolAbsence(xs, []string{"slack_hub"}); len(got) != 0 {
+	if got := ObserveToolAbsence(xs, []string{"search_hub"}); len(got) != 0 {
 		t.Errorf("codex (positive-only) must not assert absence, got %d obs", len(got))
 	}
 }
 
 func TestCanonicalToolName(t *testing.T) {
 	cases := map[string]string{
-		"mcp__slack-hub__search":     "slack_hub", // Claude hyphen form
-		"mcp__slack_hub__search":     "slack_hub", // Codex underscore form
-		"mcp__docket-hub__list":      "docket_hub",
-		"Bash":                       "",          // builtin, not a registry tool
-		"exec_command":               "",
-		"mcp__no_sep":                "",
+		"mcp__search-hub__query": "search_hub", // Claude hyphen form
+		"mcp__search_hub__query": "search_hub", // Codex underscore form
+		"mcp__issue-hub__list":   "issue_hub",
+		"Bash":                   "", // builtin, not a registry tool
+		"exec_command":           "",
+		"mcp__no_sep":            "",
 	}
 	for in, want := range cases {
 		if got := canonicalToolName(in); got != want {

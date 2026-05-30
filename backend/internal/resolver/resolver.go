@@ -34,10 +34,10 @@ import (
 type Scope int
 
 const (
-	ScopeGlobal Scope = iota // ~/git/me (David's canonical doctrine)
-	ScopeUser                // ~ (user-level; often == global for a solo operator)
-	ScopeWorkspace           // a named grouping, e.g. ~/git/zerg
-	ScopeRepo                // the specific repo / cwd
+	ScopeGlobal    Scope = iota // global agent-context doctrine, usually ~/git/me
+	ScopeUser                   // ~ (user-level; often == global for a solo operator)
+	ScopeWorkspace              // a named grouping, e.g. ~/git/workspace
+	ScopeRepo                   // the specific repo / cwd
 )
 
 func (s Scope) String() string {
@@ -79,7 +79,7 @@ func (a Activation) String() string {
 // precedence order (broadest first).
 type KnowledgeLayer struct {
 	Scope  Scope
-	Label  string // human label, e.g. "global", "workspace:zerg", "repo:longhouse"
+	Label  string // human label, e.g. "global", "workspace:workspace", "repo:service"
 	Path   string // the AGENTS.md file on disk
 	Exists bool   // false => the layer was expected here but the file is missing
 	Bytes  int    // size of the file, 0 if missing
@@ -132,10 +132,10 @@ type Overlay struct {
 // Catalog is the universe of known skills and tools plus their default
 // activation when no layer mentions them.
 type Catalog struct {
-	Skills        []string
-	Tools         []string
-	DefaultSkill  Activation // default for a skill no overlay mentions
-	DefaultTool   Activation // default for a tool no overlay mentions
+	Skills       []string
+	Tools        []string
+	DefaultSkill Activation // default for a skill no overlay mentions
+	DefaultTool  Activation // default for a tool no overlay mentions
 }
 
 // Resolve computes the effective context for path using the supplied catalog and
@@ -201,7 +201,7 @@ func resolveItems(kind string, names []string, def Activation, overlays []Overla
 
 // WorkspaceFor returns the workspace name for a path using the v1 path-based
 // rule: the first segment under <home>/git that is not the path's own repo tail.
-// e.g. ~/git/zerg/longhouse -> "zerg"; ~/git/me -> "me".
+// e.g. ~/git/workspace/service -> "workspace"; ~/git/me -> "me".
 // Returns "" when the path is not under <home>/git.
 func WorkspaceFor(path, home string) string {
 	clean := filepath.Clean(path)

@@ -1,6 +1,6 @@
 # Agent Context Observatory Release Readiness
 
-Status: release-ready
+Status: source-release ready; public binary release still needs notarization
 Target: Hacker News-ready local-first macOS developer app
 
 ## Executive Summary
@@ -22,7 +22,7 @@ public scrutiny.
   useful empty/demo state instead of raw implementation guidance.
 - The app has a recognizable macOS Dock icon and a menu bar extra for lightweight
   status/actions.
-- Demo mode produces a visually compelling, deterministic live feed suitable for
+- Demo mode produces a deterministic live feed suitable for fresh public
   screenshots and a short launch video.
 - Real mode can show current local agent sessions and live proxy captures after
   one install command, with no wrapper or managed launch in the primary flow.
@@ -30,8 +30,7 @@ public scrutiny.
   product language with the zero-wrapper capture model and security model stated
   plainly.
 - Backend QA passes: build, vet, unit tests, race tests, and install lifecycle.
-- App QA passes: project generation, Debug build, launched app smoke test, and
-  screenshot verification.
+- App QA passes: project generation, Debug build, and launched app smoke test.
 - The repository has a clean source boundary: no generated binaries, no local
   captures, no Xcode derived state, and no private personal-machine assumptions
   required for basic demo/build.
@@ -174,16 +173,18 @@ Verification:
 
 ### Phase 5: Final Release QA
 
-Status: complete
+Status: complete for source release; public visual assets need a fresh sanitized capture
 
 Acceptance criteria:
-- Backend QA, app build, launch smoke test, and screenshot review all pass.
+- Backend QA, app build, and launch smoke test all pass.
 - README and launch note are accurate against the built artifact.
 - Final git status contains only intentional source/release changes.
 
 Verification:
 - `make release` passed.
 - Packaged app launched from `dist/Observatory.app` and rendered the demo feed.
+- Pre-public screenshots were removed because they included private desktop
+  context; new sanitized launch screenshots are tracked in the Week 1 plan.
 - Release artifacts:
   - `dist/Agent-Context-Observatory-0.1.0-macos.zip`
   - `dist/agents`

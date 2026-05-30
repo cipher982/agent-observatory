@@ -23,9 +23,9 @@ func mkfile(t *testing.T, path, content string) {
 // claudeJSONLFor builds a claude transcript whose cwd sits under the given home,
 // so GitRepo resolves via the ~/git heuristic.
 func claudeJSONLFor(home string) string {
-	cwd := filepath.Join(home, "git", "zerg", "longhouse")
+	cwd := filepath.Join(home, "git", "workspace", "example-service")
 	return `{"type":"attachment","attachment":{"type":"file","content":{"file":{"filePath":"/x/AGENTS.md","content":"doctrine with Behavior gates inside"}}},"cwd":"` + cwd + `","gitBranch":"main","sessionId":"sess-abc","version":"2.1.152","timestamp":"2026-05-01T10:00:00Z"}
-{"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":["mcp__slack_hub__search","Bash"]},"timestamp":"2026-05-01T10:00:01Z"}
+{"type":"attachment","attachment":{"type":"deferred_tools_delta","addedNames":["mcp__search_hub__query","Bash"]},"timestamp":"2026-05-01T10:00:01Z"}
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"},{"type":"text"}]},"timestamp":"2026-05-01T10:00:05Z"}
 not valid json — must be skipped
 {"type":"user","timestamp":"2026-05-01T10:00:10Z"}
@@ -36,7 +36,7 @@ func setupClaude(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	// directory name is encoded cwd (irrelevant to parsing).
-	p := filepath.Join(home, ".claude", "projects", "-h-git-zerg-longhouse", "sess-abc.jsonl")
+	p := filepath.Join(home, ".claude", "projects", "-h-git-workspace-example-service", "sess-abc.jsonl")
 	mkfile(t, p, claudeJSONLFor(home))
 	return home
 }
@@ -59,7 +59,7 @@ func TestDiscoverClaude(t *testing.T) {
 	if cs.SessionID != "sess-abc" {
 		t.Errorf("SessionID = %q, want sess-abc", cs.SessionID)
 	}
-	wantCWD := filepath.Join(home, "git", "zerg", "longhouse")
+	wantCWD := filepath.Join(home, "git", "workspace", "example-service")
 	if cs.CWD != wantCWD {
 		t.Errorf("CWD = %q, want %q", cs.CWD, wantCWD)
 	}
@@ -69,8 +69,8 @@ func TestDiscoverClaude(t *testing.T) {
 	if cs.Version != "2.1.152" {
 		t.Errorf("Version = %q", cs.Version)
 	}
-	if cs.GitRepo != "zerg" {
-		t.Errorf("GitRepo = %q, want zerg (under ~/git)", cs.GitRepo)
+	if cs.GitRepo != "workspace" {
+		t.Errorf("GitRepo = %q, want workspace (under ~/git)", cs.GitRepo)
 	}
 	// 4 valid records (the malformed line is skipped).
 	if cs.RecordCount != 4 {
@@ -96,7 +96,7 @@ func TestExtractClaudeContext(t *testing.T) {
 		t.Errorf("expected marker in blocks, got %q", joined)
 	}
 	// tools: from deferred delta + tool_use, deduped.
-	want := map[string]bool{"mcp__slack_hub__search": true, "Bash": true, "Read": true}
+	want := map[string]bool{"mcp__search_hub__query": true, "Bash": true, "Read": true}
 	if len(tools) != len(want) {
 		t.Errorf("tools = %v, want %v keys", tools, want)
 	}
@@ -292,7 +292,7 @@ func TestDiscoverAllRuntimesSorted(t *testing.T) {
 func TestRepoFromCWD(t *testing.T) {
 	home := "/h"
 	cases := []struct{ cwd, want string }{
-		{"/h/git/zerg/longhouse", "zerg"},
+		{"/h/git/workspace/example-service", "workspace"},
 		{"/h/git/me", "me"},
 		// cwd exactly at the git root: the trailing-slash prefix check fails to
 		// strip cleanly and IndexRune hits the leading separator, yielding "".

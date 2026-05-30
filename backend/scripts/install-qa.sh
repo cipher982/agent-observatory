@@ -38,7 +38,7 @@ for i in $(seq 1 "$ITER"); do
   # verify installed
   HOME="$FAKE_HOME" PATH="$STUBDIR:$PATH" "$BIN" status >/dev/null || { echo "iter $i: status not installed"; exit 1; }
   grep -q "agent-observatory" "$FAKE_HOME/.zshenv" || { echo "iter $i: no managed block"; exit 1; }
-  test -f "$FAKE_HOME/Library/LaunchAgents/io.drose.observatory.plist" || { echo "iter $i: no plist"; exit 1; }
+  test -f "$FAKE_HOME/Library/LaunchAgents/com.github.cipher982.agentobservatory.plist" || { echo "iter $i: no plist"; exit 1; }
   grep -q "launchctl setenv HTTPS_PROXY" "$OBS_LAUNCHCTL_LOG" || { echo "iter $i: setenv not called"; exit 1; }
 
   # double-install (idempotency)
@@ -52,7 +52,7 @@ for i in $(seq 1 "$ITER"); do
   # assert clean: profile restored exactly, plist + CA gone
   AFTER="$(cat "$FAKE_HOME/.zshenv")"
   test "$BEFORE" = "$AFTER" || { echo "iter $i: profile not restored:"; diff <(echo "$BEFORE") <(echo "$AFTER"); exit 1; }
-  test ! -f "$FAKE_HOME/Library/LaunchAgents/io.drose.observatory.plist" || { echo "iter $i: plist survived"; exit 1; }
+  test ! -f "$FAKE_HOME/Library/LaunchAgents/com.github.cipher982.agentobservatory.plist" || { echo "iter $i: plist survived"; exit 1; }
   test ! -d "$FAKE_HOME/.local/state/agent-observatory/ca" || { echo "iter $i: CA dir survived"; exit 1; }
 
   rm -rf "$FAKE_HOME"

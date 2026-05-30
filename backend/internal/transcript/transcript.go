@@ -6,7 +6,7 @@
 //   - "claude"      : ~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl
 //   - "codex"       : ~/.codex/sessions/YYYY/MM/DD/rollout-<ISO>-<uuid>.jsonl
 //   - "antigravity" : ~/.gemini/antigravity-cli/conversations/<uuid>.pb (opaque;
-//                     discovery-only via history.jsonl — Coverage NONE for context)
+//     discovery-only via history.jsonl — Coverage NONE for context)
 //
 // (The deprecated Gemini CLI, retired June 2026, is intentionally NOT read; its
 // old ~/.gemini/tmp/.../chats path only holds pre-deprecation ghosts.)
@@ -34,7 +34,7 @@ type Session struct {
 	StartedAt    time.Time // first record timestamp, or file ctime fallback
 	LastActivity time.Time // max record timestamp, or file mtime fallback
 	Version      string    // CLI version if available
-	RecordCount  int        // number of parsed records in the transcript
+	RecordCount  int       // number of parsed records in the transcript
 }
 
 // Discover scans every known runtime directory, parses each transcript, and
@@ -168,7 +168,7 @@ func ExtractAssembledContext(s Session) (systemPromptBlocks []string, toolNames 
 }
 
 // repoFromCWD derives a best-effort repo name from a cwd. Preference order:
-//  1. the path segment immediately under "<home>/git" (e.g. ~/git/zerg -> "zerg"),
+//  1. the path segment immediately under "<home>/git" (e.g. ~/git/workspace -> "workspace"),
 //  2. otherwise the last path segment.
 //
 // It is deliberately heuristic; the verifier should treat it as a hint.
