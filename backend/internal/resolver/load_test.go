@@ -17,7 +17,7 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-// fakeHome lays out a minimal ~/git/me layout under a temp dir and sets $HOME.
+// fakeHome lays out a minimal legacy ~/git/me layout under a temp dir and sets $HOME.
 // Returns the home path.
 func fakeHome(t *testing.T) string {
 	t.Helper()
@@ -177,8 +177,48 @@ skills:
 	}
 }
 
-// TestLoadFromDiskMissingKnowledge: a workspace without AGENTS.md yields a layer
-// with Exists=false (the missing-detection path).
+func TestLoadFromDiskCleanHomeRepoAgents(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	writeFile(t, filepath.Join(home, "AGENTS.md"), "user-level instructions\n")
+	writeFile(t, filepath.Join(home, ".agents", "skills", "lint", "SKILL.md"), "# lint\n")
+	writeFile(t, filepath.Join(home, ".agents", "mcp-registry.toml"), `
+[servers.docs]
+command = "docs"
+`)
+	repo := filepath.Join(home, "work", "stranger-app")
+	writeFile(t, filepath.Join(repo, "AGENTS.md"), "repo-specific instructions\n")
+	writeFile(t, filepath.Join(repo, "agents.yaml"), `
+skills:
+  lint: enabled
+tools:
+  docs: disabled
+`)
+
+	res, err := LoadFromDisk(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Knowledge) != 2 {
+		t.Fatalf("knowledge layers = %+v, want user global + repo", res.Knowledge)
+	}
+	if res.Knowledge[0].Label != "global" || res.Knowledge[1].Label != "repo:stranger-app" {
+		t.Fatalf("knowledge labels = %+v, want global then repo:stranger-app", res.Knowledge)
+	}
+	lint := findItem(t, res.Skills, "lint")
+	if !lint.Active || lint.Origin != ScopeRepo {
+		t.Errorf("lint = %+v, want active from repo overlay", lint)
+	}
+	docs := findItem(t, res.Tools, "docs")
+	if docs.Active || docs.Origin != ScopeRepo {
+		t.Errorf("docs = %+v, want disabled from repo overlay", docs)
+	}
+}
+
+// TestLoadFromDiskMissingKnowledge: a workspace without AGENTS.md does not create
+// a false expected layer. Missing user/repo instructions should be represented as
+// absence of knowledge, not drift.
 func TestLoadFromDiskMissingKnowledge(t *testing.T) {
 	home := fakeHome(t)
 
@@ -196,27 +236,10 @@ func TestLoadFromDiskMissingKnowledge(t *testing.T) {
 		t.Errorf("Workspace = %q, want ghost", res.Workspace)
 	}
 
-	var wsLayer *KnowledgeLayer
-	var repoLayer *KnowledgeLayer
-	for i := range res.Knowledge {
-		switch res.Knowledge[i].Label {
-		case "workspace:ghost":
-			wsLayer = &res.Knowledge[i]
-		case "repo:app":
-			repoLayer = &res.Knowledge[i]
+	for _, kl := range res.Knowledge {
+		if kl.Label == "workspace:ghost" || kl.Label == "repo:app" {
+			t.Fatalf("missing knowledge layer should not be synthesized: %+v", res.Knowledge)
 		}
-	}
-	if wsLayer == nil {
-		t.Fatalf("expected workspace:ghost knowledge layer, have %v", res.Knowledge)
-	}
-	if wsLayer.Exists {
-		t.Errorf("workspace:ghost AGENTS.md should be detected MISSING")
-	}
-	if wsLayer.Bytes != 0 {
-		t.Errorf("missing layer should report 0 bytes, got %d", wsLayer.Bytes)
-	}
-	if repoLayer == nil || repoLayer.Exists {
-		t.Errorf("repo:app AGENTS.md should be detected missing, got %#v", repoLayer)
 	}
 }
 

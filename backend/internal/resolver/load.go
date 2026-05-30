@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -13,16 +14,14 @@ import (
 // reading the local agent-context layout, then resolves. It is the production
 // entry point used by the CLI and GUI.
 //
-// Layout assumptions (v1):
-//   - Global doctrine:   <home>/git/me/AGENTS.md
-//   - Skill catalog:     <home>/git/me/skills/<name>/SKILL.md
-//   - Tool catalog:      <home>/git/me/registry/mcp-registry.toml ([servers.<name>])
-//   - Activation overlays (optional, any layer): an "agents.yaml" next to the
-//     AGENTS.md for that scope. Global overlay: <home>/git/me/agents.yaml.
-//     Workspace overlay: <home>/git/<workspace>/agents.yaml.
-//     Repo overlay: <path>/agents.yaml (or .agents.yaml).
-//   - Workspace knowledge: <home>/git/<workspace>/AGENTS.md
-//   - Repo knowledge:      <path>/AGENTS.md
+// Layout assumptions:
+//   - Global doctrine: first existing of ~/AGENTS.md, ~/.agents/AGENTS.md,
+//     ~/.config/agent-observatory/AGENTS.md, or the legacy ~/git/me/AGENTS.md.
+//   - Repo knowledge: AGENTS.md files found while walking from home toward path.
+//   - Skill catalog: any <dir>/<name>/SKILL.md under common user skill dirs.
+//   - Tool catalog: mcp-registry.toml in common user config dirs.
+//   - Activation overlays: agents.yaml (or .agents.yaml) beside any knowledge
+//     layer. Missing files are no-ops.
 func LoadFromDisk(path string) (Resolution, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -32,56 +31,167 @@ func LoadFromDisk(path string) (Resolution, error) {
 	if err != nil {
 		abs = path
 	}
-	me := filepath.Join(home, "git", "me")
-
 	cat := Catalog{
-		Skills:       loadSkillCatalog(filepath.Join(me, "skills")),
-		Tools:        loadToolCatalog(filepath.Join(me, "registry", "mcp-registry.toml")),
+		Skills:       loadSkillCatalogs(skillCatalogDirs(home)),
+		Tools:        loadToolCatalogs(toolCatalogPaths(home)),
 		DefaultSkill: Disabled, // skills are explicit-on by default
 		DefaultTool:  Enabled,  // project default: tools on everywhere unless disabled
 	}
 
 	ws := WorkspaceFor(abs, home)
 
-	// Build knowledge layers broadest-first.
-	var knowledge []KnowledgeLayer
-	knowledge = append(knowledge, knowledgeLayer(ScopeGlobal, "global", filepath.Join(me, "AGENTS.md")))
-	// user-level (~/AGENTS.md is typically a symlink to global; include if present and distinct)
-	if userAgents := filepath.Join(home, "AGENTS.md"); userAgents != filepath.Join(me, "AGENTS.md") {
-		if kl := knowledgeLayer(ScopeUser, "user", userAgents); kl.Exists {
-			// only add if it resolves to something other than the global file
-			if real, _ := filepath.EvalSymlinks(userAgents); real != filepath.Join(me, "AGENTS.md") {
-				knowledge = append(knowledge, kl)
-			}
-		}
-	}
-	if ws != "" && ws != "me" {
-		knowledge = append(knowledge, knowledgeLayer(ScopeWorkspace, "workspace:"+ws, filepath.Join(home, "git", ws, "AGENTS.md")))
-	}
-	// repo layer: the AGENTS.md at the path itself, if it's deeper than the workspace root
-	repoAgents := filepath.Join(abs, "AGENTS.md")
-	wsRoot := filepath.Join(home, "git", ws)
-	if abs != wsRoot && abs != me {
-		knowledge = append(knowledge, knowledgeLayer(ScopeRepo, "repo:"+filepath.Base(abs), repoAgents))
-	}
-
-	// Build overlays broadest-first.
-	var overlays []Overlay
-	overlays = append(overlays, loadOverlay(ScopeGlobal, "global", filepath.Join(me, "agents.yaml")))
-	if ws != "" && ws != "me" {
-		overlays = append(overlays, loadOverlay(ScopeWorkspace, "workspace:"+ws, filepath.Join(home, "git", ws, "agents.yaml")))
-	}
-	if abs != wsRoot && abs != me {
-		ov := loadOverlay(ScopeRepo, "repo:"+filepath.Base(abs), filepath.Join(abs, "agents.yaml"))
-		if len(ov.Skills) == 0 && len(ov.Tools) == 0 {
-			ov = loadOverlay(ScopeRepo, "repo:"+filepath.Base(abs), filepath.Join(abs, ".agents.yaml"))
-		}
-		overlays = append(overlays, ov)
-	}
+	knowledge := discoverKnowledgeLayers(abs, home)
+	overlays := overlaysForKnowledge(knowledge)
 
 	res := Resolve(abs, home, cat, overlays, knowledge)
 	res.Workspace = ws
 	return res, nil
+}
+
+func skillCatalogDirs(home string) []string {
+	return []string{
+		filepath.Join(home, ".agents", "skills"),
+		filepath.Join(home, ".claude", "skills"),
+		filepath.Join(home, ".config", "agent-observatory", "skills"),
+		filepath.Join(home, "git", "me", "skills"), // legacy/private layout; optional
+	}
+}
+
+func toolCatalogPaths(home string) []string {
+	return []string{
+		filepath.Join(home, ".config", "agent-observatory", "mcp-registry.toml"),
+		filepath.Join(home, ".agents", "mcp-registry.toml"),
+		filepath.Join(home, "git", "me", "registry", "mcp-registry.toml"), // legacy/private layout; optional
+	}
+}
+
+func loadSkillCatalogs(dirs []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, dir := range dirs {
+		for _, name := range loadSkillCatalog(dir) {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func loadToolCatalogs(paths []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, path := range paths {
+		for _, name := range loadToolCatalog(path) {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func discoverKnowledgeLayers(path, home string) []KnowledgeLayer {
+	dir := path
+	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() {
+		dir = filepath.Dir(dir)
+	}
+
+	var out []KnowledgeLayer
+	seen := map[string]bool{}
+	add := func(scope Scope, label, path string) {
+		kl := knowledgeLayer(scope, label, path)
+		if !kl.Exists || seenKnowledge(seen, path) {
+			return
+		}
+		out = append(out, kl)
+	}
+
+	for _, candidate := range globalKnowledgeCandidates(home) {
+		kl := knowledgeLayer(ScopeGlobal, "global", candidate)
+		if kl.Exists && !seenKnowledge(seen, candidate) {
+			out = append(out, kl)
+			break
+		}
+	}
+
+	var dirs []string
+	for cur := filepath.Clean(dir); ; cur = filepath.Dir(cur) {
+		dirs = append(dirs, cur)
+		if cur == filepath.Clean(home) || filepath.Dir(cur) == cur {
+			break
+		}
+	}
+	for i := len(dirs) - 1; i >= 0; i-- {
+		d := dirs[i]
+		if d == filepath.Clean(home) {
+			add(ScopeUser, "user", filepath.Join(d, "AGENTS.md"))
+			continue
+		}
+		add(scopeForDir(d, dir, home), labelForDir(d, dir, home), filepath.Join(d, "AGENTS.md"))
+	}
+	return out
+}
+
+func globalKnowledgeCandidates(home string) []string {
+	return []string{
+		filepath.Join(home, "AGENTS.md"),
+		filepath.Join(home, ".agents", "AGENTS.md"),
+		filepath.Join(home, ".config", "agent-observatory", "AGENTS.md"),
+		filepath.Join(home, "git", "me", "AGENTS.md"), // legacy/private layout; optional
+	}
+}
+
+func seenKnowledge(seen map[string]bool, path string) bool {
+	key := filepath.Clean(path)
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		key = filepath.Clean(real)
+	}
+	if seen[key] {
+		return true
+	}
+	seen[key] = true
+	return false
+}
+
+func overlaysForKnowledge(knowledge []KnowledgeLayer) []Overlay {
+	var overlays []Overlay
+	for _, kl := range knowledge {
+		dir := filepath.Dir(kl.Path)
+		ov := loadOverlay(kl.Scope, kl.Label, filepath.Join(dir, "agents.yaml"))
+		if len(ov.Skills) == 0 && len(ov.Tools) == 0 {
+			ov = loadOverlay(kl.Scope, kl.Label, filepath.Join(dir, ".agents.yaml"))
+		}
+		overlays = append(overlays, ov)
+	}
+	return overlays
+}
+
+func scopeForDir(dir, target, home string) Scope {
+	if dir == target {
+		return ScopeRepo
+	}
+	if filepath.Dir(dir) == filepath.Join(home, "git") {
+		return ScopeWorkspace
+	}
+	return ScopeRepo
+}
+
+func labelForDir(dir, target, home string) string {
+	base := filepath.Base(dir)
+	if dir == target {
+		return "repo:" + base
+	}
+	if filepath.Dir(dir) == filepath.Join(home, "git") {
+		return "workspace:" + base
+	}
+	return "repo:" + base
 }
 
 // loadSkillCatalog lists skill names from <dir>/<name>/SKILL.md.

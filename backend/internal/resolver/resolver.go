@@ -34,7 +34,7 @@ import (
 type Scope int
 
 const (
-	ScopeGlobal    Scope = iota // global agent-context doctrine, usually ~/git/me
+	ScopeGlobal    Scope = iota // broad user-level agent-context doctrine
 	ScopeUser                   // ~ (user-level; often == global for a solo operator)
 	ScopeWorkspace              // a named grouping, e.g. ~/git/workspace
 	ScopeRepo                   // the specific repo / cwd
