@@ -28,11 +28,7 @@ release: qa
 	cp -R "$(APP_BUNDLE)" "$(RELEASE_APP)"
 	test -x "$(RELEASE_APP)/Contents/Resources/agents"
 	cp "$(RELEASE_APP)/Contents/Resources/agents" dist/agents
-	dmgroot="$$(mktemp -d)"; \
-		cp -R "$(RELEASE_APP)" "$$dmgroot/$(APP_NAME).app"; \
-		ln -s /Applications "$$dmgroot/Applications"; \
-		hdiutil create -ov -volname "$(APP_NAME)" -fs HFS+ -format UDZO -srcfolder "$$dmgroot" "dist/$(RELEASE_DMG)"; \
-		rm -rf "$$dmgroot"
+	scripts/make-dmg.sh "$(RELEASE_APP)" "dist/$(RELEASE_DMG)" "$(APP_NAME)"
 	cd dist && ditto -c -k --keepParent "$(APP_NAME).app" "$(RELEASE_ZIP)"
 	cd dist && shasum -a 256 "$(RELEASE_DMG)" "$(RELEASE_ZIP)" agents > SHA256SUMS
 	@echo "release artifacts written to dist/"

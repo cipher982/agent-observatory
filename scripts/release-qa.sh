@@ -53,6 +53,8 @@ test -d "$mount_dir/$APP_NAME" || fail "DMG missing $APP_NAME"
 test -L "$mount_dir/Applications" || fail "DMG missing Applications symlink"
 test "$(readlink "$mount_dir/Applications")" = "/Applications" || fail "DMG Applications symlink points to $(readlink "$mount_dir/Applications")"
 test -x "$mount_dir/$APP_NAME/Contents/Resources/agents" || fail "DMG app missing executable bundled helper"
+test -f "$mount_dir/.background/background.png" || fail "DMG missing branded Finder background"
+test -f "$mount_dir/.DS_Store" || fail "DMG missing Finder window layout metadata"
 hdiutil detach "$mount_dir" >/dev/null
 attached=0
 
