@@ -8,6 +8,8 @@ import SwiftUI
 //    cross the wire in realtime.
 struct ContentView: View {
     @Environment(EngineClient.self) private var engine
+    @AppStorage("observatory.onboarding.completed") private var onboardingCompleted = false
+    @AppStorage("observatory.onboarding.visible") private var onboardingVisible = true
     @State private var selection: SessionView.ID?
 
     var body: some View {
@@ -24,6 +26,19 @@ struct ContentView: View {
         .toolbar {
             ToolbarItem {
                 Button {
+                    onboardingVisible = true
+                    onboardingCompleted = false
+                    selection = nil
+                    if engine.mode != .demo {
+                        engine.restart(mode: .demo)
+                    }
+                } label: {
+                    Image(systemName: "sparkles")
+                }
+                .help("Show onboarding")
+            }
+            ToolbarItem {
+                Button {
                     Task { await engine.refresh() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
@@ -31,7 +46,12 @@ struct ContentView: View {
                 .help("Refresh sessions")
             }
         }
-        .onAppear { engine.start(mode: engine.mode) }
+        .onAppear {
+            if !onboardingCompleted {
+                onboardingVisible = true
+            }
+            engine.start(mode: engine.mode)
+        }
         .onDisappear { engine.stop() }
         .onChange(of: engine.mode) { _, _ in selection = nil }
     }
@@ -75,7 +95,26 @@ struct ContentView: View {
     // MARK: detail — live feed by default, session detail when one is selected
 
     @ViewBuilder private var detail: some View {
-        if let id = selection, let v = engine.sessions.first(where: { $0.id == id }) {
+        if onboardingVisible && !onboardingCompleted {
+            OnboardingView(
+                onExploreDemo: {
+                    onboardingVisible = false
+                    selection = nil
+                    if engine.mode != .demo {
+                        engine.restart(mode: .demo)
+                    }
+                },
+                onUseLive: {
+                    guard engine.installReady else { return }
+                    onboardingVisible = false
+                    onboardingCompleted = true
+                    selection = nil
+                    if engine.mode != .live {
+                        engine.restart(mode: .live)
+                    }
+                }
+            )
+        } else if let id = selection, let v = engine.sessions.first(where: { $0.id == id }) {
             SessionDetail(view: v)
         } else {
             LiveFeedView()

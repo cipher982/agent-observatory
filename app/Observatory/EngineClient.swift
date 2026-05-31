@@ -23,6 +23,14 @@ struct LiveEvent: Identifiable, Codable {
     }
 }
 
+enum InstallState: Equatable {
+    case unknown
+    case installed
+    case partial
+    case missing
+    case unavailable(String)
+}
+
 @MainActor
 @Observable
 final class EngineClient {
@@ -34,7 +42,8 @@ final class EngineClient {
     private(set) var sessions: [SessionView] = []
     private(set) var liveEvents: [LiveEvent] = []      // newest first
     private(set) var lastUpdated: Date?
-    private(set) var installCommand = "agents install && agents status"
+    private(set) var installState: InstallState = .unknown
+    private(set) var installStatusText = "Install status not checked yet"
     private(set) var streamConnected = false
     private(set) var pulse = 0                           // increments on each live event (drives animations)
 
@@ -51,6 +60,23 @@ final class EngineClient {
     }
 
     var baseURL: URL { URL(string: "http://127.0.0.1:\(apiPort)")! }
+    var installReady: Bool {
+        if case .installed = installState { return true }
+        return false
+    }
+    var installCommand: String {
+        guard let helper = Self.bundledHelperURL() else {
+            return "Bundled agents helper not found in this app bundle."
+        }
+        let bin = Self.shellQuote(helper.path)
+        return "\(bin) install && \(bin) status"
+    }
+    var uninstallCommand: String {
+        guard let helper = Self.bundledHelperURL() else {
+            return "Bundled agents helper not found in this app bundle."
+        }
+        return "\(Self.shellQuote(helper.path)) uninstall"
+    }
 
     func start(mode: ObservatoryMode = .demo) {
         self.mode = mode
@@ -59,6 +85,7 @@ final class EngineClient {
         pollTask = Task { [weak self] in await self?.pollLoop() }
         streamTask?.cancel()
         streamTask = Task { [weak self] in await self?.streamLoop() }
+        Task { [weak self] in await self?.checkInstallStatus() }
     }
 
     func restart(mode: ObservatoryMode) {
@@ -68,7 +95,6 @@ final class EngineClient {
         sessions = []
         liveEvents = []
         lastUpdated = nil
-        installCommand = "agents install && agents status"
         streamConnected = false
         pulse = 0
         start(mode: mode)
@@ -81,7 +107,10 @@ final class EngineClient {
 
     private func startEngineIfNeeded(mode: ObservatoryMode) {
         guard process == nil else { return }
-        guard let helper = Self.bundledHelperURL() else { return }
+        guard let helper = Self.bundledHelperURL() else {
+            state = .failed("Bundled agents helper was not found in this app bundle.")
+            return
+        }
         let p = Process()
         p.executableURL = helper
         var monitorArgs = ["monitor", "--port", "\(apiPort)", "--proxy-port", "\(proxyPort)"]
@@ -93,15 +122,60 @@ final class EngineClient {
     }
 
     static func bundledHelperURL() -> URL? {
-        if let url = Bundle.main.url(forResource: "agents", withExtension: nil) { return url }
-        let candidates = [
-            "\(NSHomeDirectory())/git/agent-observatory/backend/agents",
-            "/tmp/obsm",
-        ]
-        for c in candidates where FileManager.default.isExecutableFile(atPath: c) {
-            return URL(fileURLWithPath: c)
+        Bundle.main.url(forResource: "agents", withExtension: nil)
+    }
+
+    func checkInstallStatus() async {
+        guard let helper = Self.bundledHelperURL() else {
+            installState = .unavailable("Bundled agents helper was not found.")
+            installStatusText = "Bundled agents helper was not found."
+            return
         }
-        return nil
+        let result = await Self.runStatus(helper: helper)
+        installState = Self.parseInstallState(result.output)
+        switch installState {
+        case .installed:
+            installStatusText = "Live capture is installed."
+        case .partial:
+            installStatusText = "Install is partially present. Run uninstall or install again to repair it."
+        case .missing:
+            installStatusText = "Live capture is not installed yet."
+        case .unknown:
+            installStatusText = "Install status could not be determined."
+        case .unavailable(let message):
+            installStatusText = message
+        }
+    }
+
+    nonisolated private static func runStatus(helper: URL) async -> (code: Int32, output: String) {
+        await Task.detached {
+            let p = Process()
+            p.executableURL = helper
+            p.arguments = ["status"]
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError = pipe
+            do {
+                try p.run()
+                p.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+            } catch {
+                return (-1, "could not run agents status: \(error.localizedDescription)")
+            }
+        }.value
+    }
+
+    nonisolated private static func parseInstallState(_ output: String) -> InstallState {
+        if output.contains("overall: installed") { return .installed }
+        if output.contains("overall: partially installed") { return .partial }
+        if output.contains("overall: not fully installed") { return .missing }
+        if output.contains("could not run agents status") { return .unavailable(output) }
+        return .unknown
+    }
+
+    nonisolated private static func shellQuote(_ raw: String) -> String {
+        "'" + raw.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     // MARK: polling /api/sessions + /api/proxy

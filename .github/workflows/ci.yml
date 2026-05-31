@@ -28,14 +28,5 @@ jobs:
       - name: Download modules
         run: go mod download
 
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test -short ./...
-
-      - name: Race test
-        run: go test -race -short ./...
-
-      - name: Build CLI
-        run: go build ./cmd/agents
+      - name: Backend QA
+        run: bash scripts/qa.sh

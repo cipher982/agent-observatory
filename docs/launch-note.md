@@ -13,8 +13,9 @@ outbound requests through an install-once local proxy, and stores only derived
 facts instead of raw prompt bodies. After install, people use their agents
 normally; agents that honor standard proxy/trust environment variables are
 captured without a wrapper command or hosted account in the primary flow. The
-native app includes a demo mode so the product is visible immediately, then a live
-mode for real local traffic.
+native app ships as a DMG with the normal app-to-Applications drag install,
+includes a demo mode so the product is visible immediately, then exposes live
+capture as a separate opt-in setup inside onboarding.
 
 What is included:
 
@@ -23,12 +24,12 @@ What is included:
 - Go backend/CLI with transcript discovery, context resolver, fact/evidence
   model, localhost API, SSE stream, and optional HTTPS proxy.
 - Install/status/uninstall flow for ambient capture.
-- Release build and QA commands.
+- DMG release build and QA commands.
 
 What is not included yet:
 
 - Hosted/team observability.
-- App Store distribution.
+- Developer ID notarization or App Store distribution.
 - Canonical context management across every runtime.
 
 Repo: https://github.com/cipher982/agent-observatory
@@ -36,3 +37,7 @@ Repo: https://github.com/cipher982/agent-observatory
 The project is meant to be the missing inspector/debugger for agent context. I
 would especially like feedback on the install-once capture model, the local MITM
 security framing, and which agent runtimes should be hardened first.
+
+Distribution note: the v0.1 app is ad-hoc signed. The README tells downloaders
+to approve the first launch through System Settings → Privacy & Security → Open
+Anyway, or use the `xattr -dr com.apple.quarantine` fallback.

@@ -26,9 +26,39 @@
   <img src="docs/screenshots/live-feed.png" width="900" alt="Agent Context Observatory live feed showing verified agent sessions and captured LLM requests">
 </p>
 
-## Try It Now
+## Try It
 
-No Xcode required for the backend smoke test. Requires Go 1.26:
+The intended first-run experience is the native app:
+
+1. Download `Agent-Observatory-0.1.0-macOS.dmg` from Releases.
+2. Open the DMG and drag **Agent Observatory.app** to **Applications**.
+3. Open **Agent Observatory.app** from Applications.
+4. Start with the built-in demo feed. No account, proxy, or trust setup is
+   required to see the product surface.
+5. When ready, use the app's onboarding panel to copy the live-capture install
+   command. The command uses the helper bundled inside the app, so no separate
+   `agents` CLI install is required first.
+
+The native app currently targets the macOS 26 preview because it uses the new
+Liquid Glass SwiftUI surface. The release build is ad-hoc signed; a broad public
+binary download should be Developer ID signed and notarized first.
+
+### First Open
+
+Until the app is Developer ID signed and notarized, macOS may block the first
+launch of a downloaded build. If double-clicking the app is rejected:
+
+1. Open **System Settings** → **Privacy & Security**.
+2. Find the blocked **Agent Observatory** message.
+3. Click **Open Anyway**, then confirm the launch.
+
+Advanced fallback:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Agent\ Observatory.app
+```
+
+No Xcode required for the backend-only smoke test. Requires Go 1.26:
 
 ```bash
 cd backend
@@ -38,9 +68,7 @@ go run ./cmd/agents monitor --demo
 The command starts the localhost API, live SSE stream, local proxy, and sanitized
 demo data. Open the native app later for the full visual surface.
 
-The native app currently targets the macOS 26 preview because it uses the new
-Liquid Glass SwiftUI surface. The Go engine and CLI are separate and portable
-across Go-supported platforms.
+The Go engine and CLI are separate and portable across Go-supported platforms.
 
 ## Why This Exists
 
@@ -89,9 +117,65 @@ flowchart LR
 The backend is the source of truth. The app, CLI, and API all render the same
 fact-level model.
 
-## Quick Start
+## Install Paths
 
 ### Native App
+
+The public artifact is a DMG:
+
+```bash
+open Agent-Observatory-0.1.0-macOS.dmg
+```
+
+Drag **Agent Observatory.app** to **Applications**, then open it. The app starts
+with demo data. Drag-installing the app does not enable live capture; live
+capture is an explicit second step inside onboarding.
+
+The DMG also has a zip fallback for environments where DMGs are inconvenient.
+The app bundle contains the `agents` helper either way.
+
+### Live Capture
+
+There are two evidence levels:
+
+| Level | Meaning | Setup |
+| --- | --- | --- |
+| **Observed** | Read from local CLI transcripts. | Passive; no proxy required. |
+| **Verified** | Captured from outbound LLM requests. | One explicit local install. |
+
+Use the onboarding panel to copy the bundled-helper command after you have read
+the trust explanation. It installs a local launchd daemon, a stable local CA, and
+the proxy/trust environment needed by newly launched agents.
+
+Then use Claude, Codex, and other agents normally. Newly launched agents that
+honor standard proxy/trust environment variables route through the local
+Observatory proxy automatically.
+
+No wrapper command in the primary flow. No managed launch. No browser extension.
+The onboarding panel also exposes the reset command; the equivalent CLI command
+is:
+
+```bash
+agents uninstall
+```
+
+Uninstall reverses the setup and is covered by a looped fake-home QA harness.
+
+### Optional CLI
+
+Power users can install and inspect live capture from the standalone CLI:
+
+```bash
+agents install
+agents status
+agents uninstall
+```
+
+For the app release path, onboarding provides fully-qualified commands that
+point at the helper bundled inside **Agent Observatory.app**. A separate CLI
+install is optional, not required for the GUI path.
+
+## Build From Source
 
 Native app requirements:
 
@@ -100,16 +184,26 @@ Native app requirements:
 - XcodeGen
 - Go 1.26+
 
-Build and open the app:
+Build the local release artifacts:
+
+```bash
+make release
+open dist/Agent\ Observatory.app
+```
+
+The app opens with a first-run onboarding surface and starts in **Demo** mode so
+the live feed is immediately useful before any proxy or trust setup. The
+onboarding path lets users explore sample evidence first, then copy the live
+capture install command when they are ready. Use the menu bar extra to switch
+Demo/Live mode, reopen onboarding, refresh sessions, show the main window, or
+quit.
+
+For inner-loop development only:
 
 ```bash
 make app-build
-open /tmp/observatory-dd/Build/Products/Debug/Observatory.app
+open /tmp/observatory-dd/Build/Products/Debug/Agent\ Observatory.app
 ```
-
-The app starts in **Demo** mode so the live feed is immediately useful. Use the
-menu bar extra to switch Demo/Live mode, refresh sessions, show the main window,
-or quit.
 
 ### Full Local QA
 
@@ -119,39 +213,6 @@ make qa
 
 This runs backend build, vet, unit tests, race tests, install lifecycle QA, and
 the macOS app build.
-
-## Real Capture
-
-There are two evidence levels:
-
-| Level | Meaning | Setup |
-| --- | --- | --- |
-| **Observed** | Read from local CLI transcripts. | Passive; no proxy required. |
-| **Verified** | Captured from outbound LLM requests. | One explicit local install. |
-
-Install once:
-
-```bash
-agents install
-agents status
-```
-
-Then use Claude, Codex, and other agents normally. Newly launched agents that
-honor standard proxy/trust environment variables route through the local
-Observatory proxy automatically.
-
-No wrapper command in the primary flow. No managed launch. No browser extension.
-No hosted account.
-
-Remove everything:
-
-```bash
-agents uninstall
-```
-
-Install sets a local launchd daemon, a stable local CA, and the process
-environment needed by newly launched agents. Uninstall reverses the setup and is
-covered by a looped fake-home QA harness.
 
 ## Trust Model
 
@@ -224,9 +285,15 @@ make release
 
 Artifacts are written to `dist/`:
 
-- `Agent-Context-Observatory-0.1.0-macos.zip`
+- `Agent-Observatory-0.1.0-macOS.dmg`
+- `Agent-Observatory-0.1.0-macOS.zip`
+- `Agent Observatory.app`
 - `agents`
 - `SHA256SUMS`
+
+The DMG is the primary user-facing artifact. It contains
+**Agent Observatory.app** and an **Applications** symlink for the normal macOS
+drag-install flow. The zip is a fallback.
 
 The local release build is ad-hoc signed. A broad public binary download should
 be Developer ID signed and notarized first.
@@ -255,6 +322,7 @@ be Developer ID signed and notarized first.
 make backend-qa
 make app-build
 make release
+bash scripts/release-qa.sh
 ```
 
 Detailed release and planning notes live under `docs/`.
