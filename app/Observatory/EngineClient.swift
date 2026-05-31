@@ -31,6 +31,31 @@ enum InstallState: Equatable {
     case unavailable(String)
 }
 
+private enum BundledHelper: Equatable {
+    case ready(URL)
+    case notFound
+    case missingAt(String)
+    case notExecutable(String)
+
+    var url: URL? {
+        if case .ready(let url) = self { return url }
+        return nil
+    }
+
+    var message: String {
+        switch self {
+        case .ready:
+            return ""
+        case .notFound:
+            return "Bundled agents helper was not found in this app bundle. Rebuild or reinstall Agent Observatory."
+        case .missingAt(let path):
+            return "Bundled agents helper is missing at \(path). Rebuild or reinstall Agent Observatory."
+        case .notExecutable(let path):
+            return "Bundled agents helper is not executable at \(path). Rebuild or reinstall Agent Observatory."
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class EngineClient {
@@ -65,18 +90,24 @@ final class EngineClient {
         return false
     }
     var installCommand: String {
-        guard let helper = Self.bundledHelperURL() else {
-            return "Bundled agents helper not found in this app bundle."
-        }
+        let bundledHelper = Self.bundledHelper()
+        guard let helper = bundledHelper.url else { return bundledHelper.message }
         let bin = Self.shellQuote(helper.path)
         return "\(bin) install && \(bin) status"
     }
+    var installCommandPreview: String {
+        let bundledHelper = Self.bundledHelper()
+        guard let helper = bundledHelper.url else { return bundledHelper.message }
+        let bin = Self.shellQuote(helper.path)
+        return "\(bin) install\n\(bin) status"
+    }
     var uninstallCommand: String {
-        guard let helper = Self.bundledHelperURL() else {
-            return "Bundled agents helper not found in this app bundle."
-        }
+        let bundledHelper = Self.bundledHelper()
+        guard let helper = bundledHelper.url else { return bundledHelper.message }
         return "\(Self.shellQuote(helper.path)) uninstall"
     }
+    var installCommandAvailable: Bool { Self.bundledHelper().url != nil }
+    var helperLocationWarning: String? { Self.helperLocationWarning() }
 
     func start(mode: ObservatoryMode = .demo) {
         self.mode = mode
@@ -107,8 +138,9 @@ final class EngineClient {
 
     private func startEngineIfNeeded(mode: ObservatoryMode) {
         guard process == nil else { return }
-        guard let helper = Self.bundledHelperURL() else {
-            state = .failed("Bundled agents helper was not found in this app bundle.")
+        let bundledHelper = Self.bundledHelper()
+        guard let helper = bundledHelper.url else {
+            state = .failed(bundledHelper.message)
             return
         }
         let p = Process()
@@ -121,14 +153,26 @@ final class EngineClient {
         catch { state = .failed("could not launch engine: \(error.localizedDescription)") }
     }
 
-    static func bundledHelperURL() -> URL? {
-        Bundle.main.url(forResource: "agents", withExtension: nil)
+    private static func bundledHelper() -> BundledHelper {
+        guard let url = Bundle.main.url(forResource: "agents", withExtension: nil) else {
+            return .notFound
+        }
+        let path = url.path
+        var isDir: ObjCBool = false
+        if !FileManager.default.fileExists(atPath: path, isDirectory: &isDir) || isDir.boolValue {
+            return .missingAt(path)
+        }
+        if !FileManager.default.isExecutableFile(atPath: path) {
+            return .notExecutable(path)
+        }
+        return .ready(url)
     }
 
     func checkInstallStatus() async {
-        guard let helper = Self.bundledHelperURL() else {
-            installState = .unavailable("Bundled agents helper was not found.")
-            installStatusText = "Bundled agents helper was not found."
+        let bundledHelper = Self.bundledHelper()
+        guard let helper = bundledHelper.url else {
+            installState = .unavailable(bundledHelper.message)
+            installStatusText = bundledHelper.message
             return
         }
         let result = await Self.runStatus(helper: helper)
@@ -161,7 +205,7 @@ final class EngineClient {
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
             } catch {
-                return (-1, "could not run agents status: \(error.localizedDescription)")
+                return (-1, "could not run agents status at \(helper.path): \(error.localizedDescription)")
             }
         }.value
     }
@@ -176,6 +220,21 @@ final class EngineClient {
 
     nonisolated private static func shellQuote(_ raw: String) -> String {
         "'" + raw.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    nonisolated private static func helperLocationWarning() -> String? {
+        let bundlePath = Bundle.main.bundlePath
+        let homeApplications = NSHomeDirectory() + "/Applications/"
+        if bundlePath.hasPrefix("/Applications/") || bundlePath.hasPrefix(homeApplications) {
+            return nil
+        }
+        if bundlePath.hasPrefix("/Volumes/") {
+            return "Move Agent Observatory to Applications before live-capture install. The daemon stores this helper path, and DMG paths disappear after ejecting."
+        }
+        if bundlePath.hasPrefix("/private/tmp/") || bundlePath.hasPrefix("/tmp/") || bundlePath.contains("/DerivedData/") {
+            return "This app is running from a temporary build path. Live-capture install will point launchd at this helper path, so use an Applications build for new-user testing."
+        }
+        return "For live capture, run Agent Observatory from Applications so the installed helper path remains stable."
     }
 
     // MARK: polling /api/sessions + /api/proxy

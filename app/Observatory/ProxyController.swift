@@ -31,12 +31,41 @@ final class ProxyController: NSObject {
 
     // MARK: System extension activation
 
+    // The NE relay forwards allowlisted flows to the Go proxy on 127.0.0.1:7879,
+    // which terminates TLS with the STABLE CA created by `agents install`. The CA
+    // we trust in the login keychain is that same stable CA. So NE capture is only
+    // coherent when the installed launchd daemon (stable-CA proxy) is running — NOT
+    // an app-spawned ephemeral-CA monitor. Gate activation on that precondition so
+    // we never route agent TLS into a proxy presenting an untrusted cert.
     func activate() {
-        status = .activating
-        let req = OSSystemExtensionRequest.activationRequest(
-            forExtensionWithIdentifier: extensionBundleID, queue: .main)
-        req.delegate = self
-        OSSystemExtensionManager.shared.submitRequest(req)
+        Task { @MainActor in
+            guard await self.installedDaemonPresent() else {
+                self.status = .failed("Run `agents install` first — NE capture needs the installed daemon's stable CA.")
+                return
+            }
+            self.status = .activating
+            let req = OSSystemExtensionRequest.activationRequest(
+                forExtensionWithIdentifier: self.extensionBundleID, queue: .main)
+            req.delegate = self
+            OSSystemExtensionManager.shared.submitRequest(req)
+        }
+    }
+
+    // True when `agents status` reports a full install (stable CA on disk +
+    // daemon), via the bundled helper.
+    private func installedDaemonPresent() async -> Bool {
+        guard let helper = Bundle.main.url(forResource: "agents", withExtension: nil) else { return false }
+        return await Task.detached {
+            let p = Process()
+            p.executableURL = helper
+            p.arguments = ["status"]
+            let pipe = Pipe(); p.standardOutput = pipe; p.standardError = pipe
+            do {
+                try p.run(); p.waitUntilExit()
+                let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                return out.contains("overall: installed")
+            } catch { return false }
+        }.value
     }
 
     func deactivate() {
@@ -44,8 +73,13 @@ final class ProxyController: NSObject {
             forExtensionWithIdentifier: extensionBundleID, queue: .main)
         req.delegate = self
         OSSystemExtensionManager.shared.submitRequest(req)
-        removeCATrust()
-        Task { await stopTunnel() }
+        // Stop the tunnel FIRST, then remove CA trust — otherwise there's a window
+        // where the proxy is still intercepting but agents no longer trust its CA,
+        // which would fail their TLS handshakes instead of cleanly passing through.
+        Task {
+            await stopTunnel()
+            await self.removeCATrust()
+        }
     }
 
     // MARK: Transparent proxy configuration
@@ -57,7 +91,11 @@ final class ProxyController: NSObject {
                 Task { @MainActor in self.status = .failed("load preferences: \(error.localizedDescription)") }
                 return
             }
-            let manager = managers?.first ?? NETransparentProxyManager()
+            // Reuse only OUR manager (matched by provider bundle id), not whatever
+            // happens to be first — another transparent proxy config may exist.
+            let manager = managers?.first {
+                ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleID
+            } ?? NETransparentProxyManager()
             let proto = NETunnelProviderProtocol()
             proto.providerBundleIdentifier = bundleID
             proto.serverAddress = "127.0.0.1"   // must be non-nil; loopback is fine
@@ -73,14 +111,15 @@ final class ProxyController: NSObject {
                 manager.loadFromPreferences { _ in
                     do {
                         try manager.connection.startVPNTunnel()
-                        // Trust the local CA in the login keychain so agents accept
-                        // the proxy's leaf certs — gated behind this approved sysext,
-                        // and reversed by `agents trust remove` on uninstall.
-                        Task { @MainActor in
-                            self.installCATrust()
-                            self.status = .active
-                        }
                         log.log("transparent proxy started")
+                        // Install CA trust and only mark .active once it actually
+                        // succeeds — otherwise the UI says "active" while agent TLS
+                        // handshakes fail because the CA isn't trusted yet.
+                        Task { @MainActor in
+                            let ok = await self.installCATrust()
+                            self.status = ok ? .active
+                                : .failed("CA trust install failed; agents won't accept the proxy")
+                        }
                     } catch {
                         Task { @MainActor in self.status = .failed("start tunnel: \(error.localizedDescription)") }
                     }
@@ -91,20 +130,30 @@ final class ProxyController: NSObject {
 
     // Invoke the bundled `agents` helper to add/remove the local CA's login-keychain
     // trust. The Security framework prompts the user once to authorize the change.
-    private func installCATrust() { runHelperTrust("install") }
-    func removeCATrust() { runHelperTrust("remove") }
+    // Returns true only if the helper exits 0, so callers can gate UI on real success.
+    @discardableResult
+    private func installCATrust() async -> Bool { await runHelperTrust("install") }
+    @discardableResult
+    func removeCATrust() async -> Bool { await runHelperTrust("remove") }
 
-    private func runHelperTrust(_ action: String) {
+    private func runHelperTrust(_ action: String) async -> Bool {
         guard let helper = Bundle.main.url(forResource: "agents", withExtension: nil) else {
             log.error("bundled agents helper not found; cannot \(action) CA trust")
-            return
+            return false
         }
-        let p = Process()
-        p.executableURL = helper
-        p.arguments = ["trust", action]
-        do { try p.run() } catch {
-            log.error("agents trust \(action) failed to launch: \(error.localizedDescription)")
-        }
+        return await Task.detached {
+            let p = Process()
+            p.executableURL = helper
+            p.arguments = ["trust", action]
+            do {
+                try p.run()
+                p.waitUntilExit()
+                return p.terminationStatus == 0
+            } catch {
+                log.error("agents trust \(action) failed to launch: \(error.localizedDescription)")
+                return false
+            }
+        }.value
     }
 
     private func stopTunnel() async {

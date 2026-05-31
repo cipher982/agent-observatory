@@ -37,14 +37,18 @@ enum ProxySettings {
             include("::", 0),
         ]
         // Never capture loopback or private ranges — including our own CONNECT hop
-        // to the Go proxy. Excludes are evaluated before includes.
+        // to the Go proxy. Excludes are evaluated before includes. Covers IPv4
+        // loopback/RFC1918/link-local/CGNAT and IPv6 loopback/ULA/link-local.
         settings.excludedNetworkRules = [
             exclude("127.0.0.0", 8, "0"),
-            exclude("::1", 128, "0"),
             exclude("10.0.0.0", 8, "0"),
             exclude("172.16.0.0", 12, "0"),
             exclude("192.168.0.0", 16, "0"),
-            exclude("169.254.0.0", 16, "0"),
+            exclude("169.254.0.0", 16, "0"),   // IPv4 link-local
+            exclude("100.64.0.0", 10, "0"),    // CGNAT
+            exclude("::1", 128, "0"),          // IPv6 loopback
+            exclude("fc00::", 7, "0"),         // IPv6 unique-local (ULA)
+            exclude("fe80::", 10, "0"),        // IPv6 link-local
         ]
         return settings
     }

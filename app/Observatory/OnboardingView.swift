@@ -145,6 +145,13 @@ struct OnboardingView: View {
 
                 TrustBoundaryPanel()
 
+                if let warning = engine.helperLocationWarning {
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 VStack(alignment: .leading, spacing: 10) {
                     ChecklistRow(done: true, title: "Start with demo evidence", detail: "You already saw the request stream working.")
                     ChecklistRow(done: true, title: "Understand the trust boundary", detail: "Only known LLM provider hosts are inspected; unrelated hosts tunnel opaque.")
@@ -157,9 +164,9 @@ struct OnboardingView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
-                        Text(engine.installCommand)
-                            .font(.callout.monospaced())
-                            .lineLimit(1)
+                        Text(engine.installCommandPreview)
+                            .font(.caption.monospaced())
+                            .lineLimit(2)
                             .truncationMode(.middle)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
@@ -174,6 +181,7 @@ struct OnboardingView: View {
                             Label(commandCopied ? "Copied" : "Copy Install", systemImage: commandCopied ? "checkmark" : "doc.on.doc")
                         }
                         .buttonStyle(.bordered)
+                        .disabled(!engine.installCommandAvailable)
                     }
 
                     HStack(spacing: 10) {
@@ -215,6 +223,7 @@ struct OnboardingView: View {
                         Label(uninstallCopied ? "Copied" : "Copy Reset", systemImage: uninstallCopied ? "checkmark" : "trash")
                     }
                     .buttonStyle(.bordered)
+                    .disabled(!engine.installCommandAvailable)
                 }
             }
             .padding(20)

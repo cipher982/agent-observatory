@@ -137,34 +137,63 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
     }
 
     // Bidirectional copy: flow.readData -> conn.send ; conn.receive -> flow.write.
+    // On ANY error or EOF on either leg we tear down BOTH legs, so a half-open or
+    // failed copy can never leak a flow/NWConnection or hang the client waiting for
+    // an EOF that never comes.
     private func pump(flow: NEAppProxyTCPFlow, conn: NWConnection) {
+        func teardown() { close(flow, conn) }
+
+        // flow (agent) -> conn (upstream/proxy)
         func flowToConn() {
             flow.readData { data, err in
-                guard let data, !data.isEmpty, err == nil else {
+                if let err = err { self.log_err("flow read", err); teardown(); return }
+                guard let data, !data.isEmpty else {
+                    // EOF from the agent: signal end-of-stream upstream, keep the
+                    // reverse direction alive until the upstream also finishes.
                     conn.send(content: nil, isComplete: true, completion: .idempotent)
                     return
                 }
                 conn.send(content: data, completion: .contentProcessed { e in
-                    if e == nil { flowToConn() }
+                    if e != nil { teardown(); return }
+                    flowToConn()
                 })
             }
         }
+
+        // conn (upstream/proxy) -> flow (agent)
         func connToFlow() {
             conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { data, _, isComplete, err in
+                if let err = err { self.log_err("conn recv", err); teardown(); return }
                 if let data, !data.isEmpty {
                     flow.write(data) { werr in
-                        if werr == nil && !isComplete { connToFlow() }
+                        if werr != nil { teardown(); return }
+                        if isComplete {
+                            // Final bytes delivered AND upstream closed: half-close
+                            // the write side, then tear down. (The earlier bug wrote
+                            // the data but never closed, hanging the client.)
+                            flow.closeWriteWithError(nil)
+                            teardown()
+                            return
+                        }
+                        connToFlow()
                     }
-                } else if isComplete || err != nil {
-                    flow.closeWriteWithError(err)
-                    conn.cancel()
+                } else if isComplete {
+                    flow.closeWriteWithError(nil)
+                    teardown()
                 }
             }
         }
+
         flowToConn()
         connToFlow()
     }
 
+    private func log_err(_ where_: String, _ err: Error) {
+        log.error("pump \(where_, privacy: .public): \(err.localizedDescription)")
+    }
+
+    // Idempotent teardown of both legs. NWConnection.cancel and the flow close
+    // calls are safe to invoke more than once.
     private func close(_ flow: NEAppProxyTCPFlow, _ conn: NWConnection?) {
         flow.closeReadWithError(nil)
         flow.closeWriteWithError(nil)

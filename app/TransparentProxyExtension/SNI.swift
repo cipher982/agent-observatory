@@ -75,29 +75,35 @@ enum SNI {
         // extensions
         guard need(2) else { return .needMore }
         let extTotal = Int(b[i]) << 8 | Int(b[i + 1]); i += 2
+        // The claimed extensions length (and hsLen) describe the FULL ClientHello,
+        // which may not have arrived yet. Bound every read by b.count via need()
+        // and treat "claimed more than present" as needMore — never index past the
+        // buffer (that would crash the system extension on fragmented input).
         let extEnd = min(i + extTotal, hsEnd)
 
         while i + 4 <= extEnd {
+            guard need(4) else { return .needMore }
             let extType = Int(b[i]) << 8 | Int(b[i + 1])
             let extLen = Int(b[i + 2]) << 8 | Int(b[i + 3])
             i += 4
             guard i + extLen <= b.count else { return .needMore }
             let extDataStart = i
+            let extDataEnd = extDataStart + extLen
 
             if extType == 0x0000 { // server_name
                 var j = extDataStart
-                guard j + 2 <= b.count else { return .needMore }
-                // ServerNameList length
+                guard j + 2 <= extDataEnd else { return .none } // malformed: list len missing
+                // ServerNameList length (bounded by the extension's own data).
                 j += 2
-                guard j + 3 <= b.count else { return .needMore }
+                guard j + 3 <= extDataEnd else { return .none }
                 let nameType = b[j]; j += 1
                 let nameLen = Int(b[j]) << 8 | Int(b[j + 1]); j += 2
                 guard nameType == 0x00 else { return .none } // not host_name
-                guard j + nameLen <= b.count else { return .needMore }
+                guard j + nameLen <= extDataEnd else { return .none } // name overruns ext
                 let host = String(decoding: b[j ..< j + nameLen], as: UTF8.self)
                 return host.isEmpty ? .none : .host(host.lowercased())
             }
-            i = extDataStart + extLen
+            i = extDataEnd
         }
 
         // Parsed a full ClientHello with no SNI extension.
