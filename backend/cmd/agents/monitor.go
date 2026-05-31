@@ -223,41 +223,20 @@ func runDemoInjector(srv *wire.Server) {
 	}
 	inject := func(i int) {
 		s := samples[i%len(samples)]
-		sys := make([]string, 0, 1)
-		if s.system > 0 {
-			sys = append(sys, repeatRune('x', s.system))
-		}
+		// Stand in for an assembled system prompt of the sampled length, so the UI
+		// shows a realistic char count without shipping any real prompt text.
+		sys := strings.Repeat("x", s.system)
 		srv.Inject(wire.Capture{
 			Host: s.host, Endpoint: s.endpoint,
-			SystemPrompt: join(sys), AllText: join(sys),
+			SystemPrompt: sys, AllText: sys,
 			ToolNames: s.tools,
 		})
 	}
-	// seed a couple immediately
+	// Seed two immediately so the feed isn't empty, then drip new ones in.
 	inject(0)
 	inject(1)
-	i := 2
-	for {
-		select {
-		case <-time.After(3 * time.Second):
-			inject(i)
-			i++
-		}
+	for i := 2; ; i++ {
+		time.Sleep(3 * time.Second)
+		inject(i)
 	}
-}
-
-func repeatRune(r rune, n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = r
-	}
-	return string(b)
-}
-
-func join(ss []string) string {
-	out := ""
-	for _, s := range ss {
-		out += s
-	}
-	return out
 }

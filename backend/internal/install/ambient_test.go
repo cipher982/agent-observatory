@@ -64,9 +64,22 @@ func TestAmbientInstallFreshProcessCapture(t *testing.T) {
 	if target.Status().Installed != true {
 		t.Fatalf("target should report installed after stable CA + profile + plist")
 	}
+	// The install sets only the additive Node trust var; routing is the NE
+	// extension's job, so HTTPS_PROXY is no longer part of the install.
+	if envSet["NODE_EXTRA_CA_CERTS"] == "" {
+		t.Fatalf("install should set NODE_EXTRA_CA_CERTS for Node trust")
+	}
 
+	// Model what the NE relay does for a captured flow: route the agent's request
+	// to the local proxy (here via HTTPS_PROXY in the child env, since the test
+	// can't install a kernel transparent proxy) and trust the stable CA the way
+	// the install delivers it (NODE_EXTRA_CA_CERTS for the Node-style helper).
 	cmd := exec.Command(os.Args[0], "-test.run=TestAmbientInstallFreshProcessCaptureHelper", "--")
-	cmd.Env = append(os.Environ(), "OBS_AMBIENT_HELPER=1", "OBS_AMBIENT_URL=https://"+upHost+":"+upPort+"/v1/messages")
+	cmd.Env = append(os.Environ(),
+		"OBS_AMBIENT_HELPER=1",
+		"OBS_AMBIENT_URL=https://"+upHost+":"+upPort+"/v1/messages",
+		"HTTPS_PROXY=http://"+proxyAddr,
+	)
 	for k, v := range envSet {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
@@ -94,7 +107,9 @@ func TestAmbientInstallFreshProcessCaptureHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	caPEM, err := os.ReadFile(os.Getenv("SSL_CERT_FILE"))
+	// Trust the stable CA the way the install delivers it to Node: the additive
+	// NODE_EXTRA_CA_CERTS var (never SSL_CERT_FILE, which would replace roots).
+	caPEM, err := os.ReadFile(os.Getenv("NODE_EXTRA_CA_CERTS"))
 	if err != nil {
 		t.Fatal(err)
 	}

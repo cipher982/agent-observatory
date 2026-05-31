@@ -157,9 +157,15 @@ final class ProxyController: NSObject {
     }
 
     private func stopTunnel() async {
+        let bundleID = extensionBundleID
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             NETransparentProxyManager.loadAllFromPreferences { managers, _ in
-                managers?.first?.connection.stopVPNTunnel()
+                // Stop only OUR manager — never another transparent proxy the user
+                // may have configured (matched the same way as configureAndStart).
+                let ours = managers?.first {
+                    ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleID
+                }
+                ours?.connection.stopVPNTunnel()
                 cont.resume()
             }
         }

@@ -72,7 +72,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
                 self.peekAndRoute(flow, remote: remote, accumulated: buf)
             case .host(let sni) where self.allow.contains(sni):
                 log.log("capture flow sni=\(sni, privacy: .public)")
-                self.relayViaGoProxy(flow, firstBytes: buf, host: sni)
+                self.relayViaGoProxy(flow, firstBytes: buf, host: sni, remote: remote)
             default:
                 // No SNI, not allowlisted, or peek budget exhausted: pass through
                 // by relaying DIRECT to the real destination (we already took it).
@@ -81,8 +81,11 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
         }
     }
 
-    // Allowlisted: tunnel through the Go MITM proxy via HTTP CONNECT.
-    private func relayViaGoProxy(_ flow: NEAppProxyTCPFlow, firstBytes: Data, host: String) {
+    // Allowlisted: tunnel through the Go MITM proxy via HTTP CONNECT. If the proxy
+    // is down or rejects the CONNECT (e.g. the daemon isn't running), fail OPEN by
+    // relaying direct to the real upstream — capture is best-effort, but we must
+    // never break the agent's request just because Observatory isn't listening.
+    private func relayViaGoProxy(_ flow: NEAppProxyTCPFlow, firstBytes: Data, host: String, remote: NWHostEndpoint) {
         let conn = NWConnection(
             host: NWEndpoint.Host(goProxyHost),
             port: NWEndpoint.Port(rawValue: goProxyPort)!,
@@ -90,10 +93,21 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
         )
         conn.start(queue: .global())
         let connectReq = "CONNECT \(host):443 HTTP/1.1\r\nHost: \(host):443\r\n\r\n"
-        conn.send(content: Data(connectReq.utf8), completion: .contentProcessed { [weak self] _ in
-            self?.readConnectResponse(conn) { ok in
-                guard let self else { return }
-                guard ok else { log.error("go proxy CONNECT rejected for \(host, privacy: .public)"); self.close(flow, conn); return }
+        conn.send(content: Data(connectReq.utf8), completion: .contentProcessed { [weak self] sendErr in
+            guard let self else { return }
+            if sendErr != nil {
+                log.error("go proxy unreachable for \(host, privacy: .public); relaying direct")
+                conn.cancel()
+                self.relayDirect(flow, firstBytes: firstBytes, remote: remote)
+                return
+            }
+            self.readConnectResponse(conn) { ok in
+                guard ok else {
+                    log.error("go proxy CONNECT rejected for \(host, privacy: .public); relaying direct")
+                    conn.cancel()
+                    self.relayDirect(flow, firstBytes: firstBytes, remote: remote)
+                    return
+                }
                 conn.send(content: firstBytes, completion: .contentProcessed { _ in
                     self.pump(flow: flow, conn: conn)
                 })

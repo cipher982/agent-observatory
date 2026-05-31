@@ -72,17 +72,30 @@ final class EngineClient {
     private(set) var streamConnected = false
     private(set) var pulse = 0                           // increments on each live event (drives animations)
 
-    private let apiPort: Int
-    private let proxyPort: Int
+    // Live capture is served by the installed launchd daemon on the fixed ports.
+    // Demo mode runs an app-owned engine on DISTINCT ports so it never collides
+    // with that daemon (an installed user opening the app in Demo mode must still
+    // get demo data, not the daemon's live feed on the same port).
+    private let daemonAPIPort: Int
+    private let daemonProxyPort: Int
+    private let demoAPIPort: Int
+    private let demoProxyPort: Int
     private var process: Process?
     private var pollTask: Task<Void, Never>?
     private var streamTask: Task<Void, Never>?
     private let session = URLSession(configuration: .ephemeral)
 
-    init(apiPort: Int = 7878, proxyPort: Int = 7879) {
-        self.apiPort = apiPort
-        self.proxyPort = proxyPort
+    init(apiPort: Int = 7878, proxyPort: Int = 7879, demoAPIPort: Int = 7880, demoProxyPort: Int = 7881) {
+        self.daemonAPIPort = apiPort
+        self.daemonProxyPort = proxyPort
+        self.demoAPIPort = demoAPIPort
+        self.demoProxyPort = demoProxyPort
     }
+
+    // The port the current mode talks to: demo => app-owned engine; live => the
+    // installed daemon.
+    private var apiPort: Int { mode == .demo ? demoAPIPort : daemonAPIPort }
+    private var proxyPort: Int { mode == .demo ? demoProxyPort : daemonProxyPort }
 
     var baseURL: URL { URL(string: "http://127.0.0.1:\(apiPort)")! }
     var installReady: Bool {
@@ -119,16 +132,23 @@ final class EngineClient {
         Task { [weak self] in await self?.checkInstallStatus() }
     }
 
-    func restart(mode: ObservatoryMode) {
-        stop()
-        self.mode = mode
-        state = .starting
-        sessions = []
-        liveEvents = []
-        lastUpdated = nil
-        streamConnected = false
-        pulse = 0
-        start(mode: mode)
+    // Switch modes. We stop and WAIT for the old app-owned process to fully exit
+    // (releasing its port) before relaunching, so a fast Demo↔Live toggle can't
+    // race the port. Runs async because waitUntilExit() must not block the main
+    // actor.
+    func restart(mode newMode: ObservatoryMode) {
+        Task { [weak self] in
+            guard let self else { return }
+            await self.stopAndWait()
+            self.mode = newMode
+            self.state = .starting
+            self.sessions = []
+            self.liveEvents = []
+            self.lastUpdated = nil
+            self.streamConnected = false
+            self.pulse = 0
+            self.start(mode: newMode)
+        }
     }
 
     func stop() {
@@ -136,7 +156,22 @@ final class EngineClient {
         process?.terminate(); process = nil
     }
 
+    private func stopAndWait() async {
+        pollTask?.cancel(); streamTask?.cancel()
+        guard let p = process else { return }
+        process = nil
+        await Task.detached {
+            p.terminate()
+            p.waitUntilExit()
+        }.value
+    }
+
+    // The app is a pure renderer. LIVE capture is owned by the installed launchd
+    // daemon — the app NEVER spawns a live engine (doing so would mint an
+    // ephemeral CA agents don't trust, and fight the daemon for ports). It only
+    // spawns its OWN engine for DEMO mode, on distinct demo ports.
     private func startEngineIfNeeded(mode: ObservatoryMode) {
+        guard mode == .demo else { return } // live => render the daemon, never spawn
         guard process == nil else { return }
         let bundledHelper = Self.bundledHelper()
         guard let helper = bundledHelper.url else {
@@ -145,12 +180,15 @@ final class EngineClient {
         }
         let p = Process()
         p.executableURL = helper
-        var monitorArgs = ["monitor", "--port", "\(apiPort)", "--proxy-port", "\(proxyPort)"]
-        if mode == .demo { monitorArgs.append("--demo") }
-        p.arguments = monitorArgs
-        p.standardOutput = Pipe(); p.standardError = Pipe()
+        p.arguments = ["monitor", "--port", "\(demoAPIPort)", "--proxy-port", "\(demoProxyPort)", "--demo"]
+        // Drain stdout/stderr so a long demo session can't fill the pipe buffer
+        // and block the child (the proxy logs per capture).
+        let outPipe = Pipe(), errPipe = Pipe()
+        outPipe.fileHandleForReading.readabilityHandler = { _ = $0.availableData }
+        errPipe.fileHandleForReading.readabilityHandler = { _ = $0.availableData }
+        p.standardOutput = outPipe; p.standardError = errPipe
         do { try p.run(); process = p }
-        catch { state = .failed("could not launch engine: \(error.localizedDescription)") }
+        catch { state = .failed("could not launch demo engine: \(error.localizedDescription)") }
     }
 
     private static func bundledHelper() -> BundledHelper {
@@ -270,7 +308,14 @@ final class EngineClient {
             lastUpdated = Date()
             state = .running
         } catch {
-            if sessions.isEmpty { state = .failed(error.localizedDescription) }
+            // Only surface a failure once we've actually given up (the poll loop
+            // retries). In live mode a missing daemon is the likely cause, so say
+            // so instead of a raw socket error.
+            if sessions.isEmpty {
+                state = .failed(mode == .live
+                    ? "Live capture engine isn't running. Install it from onboarding (or run `agents install`), then enable the system extension."
+                    : error.localizedDescription)
+            }
         }
     }
 

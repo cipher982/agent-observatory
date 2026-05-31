@@ -54,10 +54,12 @@ func runInstall(args []string) int {
 	fmt.Println()
 	fmt.Println("  local proxy daemon:", t.PlistPathPublic())
 	fmt.Println("  local CA:", t.CAPEMPublic())
-	fmt.Println("  shell environment:", t.ProfilePath, "+ launchctl setenv")
+	fmt.Println("  Node trust (additive):", t.ProfilePath, "+ launchctl setenv (NODE_EXTRA_CA_CERTS)")
 	fmt.Println()
-	fmt.Println("New terminals and newly launched agents will route through the local proxy.")
-	fmt.Println("Already-running shells won't be captured until restarted.")
+	fmt.Println("Enable the NetworkExtension in Agent Observatory to route provider flows here;")
+	fmt.Println("it diverts only allowlisted LLM hosts, so unrelated traffic is untouched.")
+	fmt.Println("Trust the local CA in your login keychain with:  agents trust install")
+	fmt.Println("Newly launched agents are then captured; already-running shells need a restart.")
 	fmt.Println("Remove everything with:  agents uninstall")
 	return 0
 }
@@ -95,7 +97,7 @@ func runStatus(args []string) int {
 	}
 	fmt.Println("Agent Observatory — install status")
 	fmt.Printf("  %s stable CA         %s\n", mark(s.CAExists), t.CAPEMPublic())
-	fmt.Printf("  %s shell env block   %s\n", mark(s.ProfileBlock), t.ProfilePath)
+	fmt.Printf("  %s Node trust block  %s\n", mark(s.ProfileBlock), t.ProfilePath)
 	fmt.Printf("  %s launchd daemon    %s\n", mark(s.PlistExists), t.PlistPathPublic())
 	if s.ProfileBlock {
 		for _, k := range install.EnvVars {

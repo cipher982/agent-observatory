@@ -1,12 +1,25 @@
-// Package install performs the ambient, frictionless setup for the Agent Context
+// Package install performs the ambient, frictionless setup for Agent
 // Observatory and its fully reversible teardown.
 //
-// Goal: after one `agents install`, EVERY newly-launched agent is auto-captured
-// at the VERIFIED tier with no per-launch wrapper, because the install:
-//   - generates a STABLE CA (reused by the always-on proxy daemon),
-//   - sets HTTPS_PROXY + the CA-trust env vars globally (shell profile +
-//     launchctl setenv), so new processes inherit them,
-//   - installs a launchd daemon that keeps the proxy running.
+// Routing is handled by the NetworkExtension transparent proxy (see
+// app/TransparentProxyExtension): the kernel routes only allowlisted provider
+// :443 flows to the local proxy, so there is NO global HTTPS_PROXY/HTTP_PROXY
+// hijack and unrelated traffic is never diverted. The install therefore only
+// has to deliver two things:
+//   - a STABLE CA + an always-on launchd daemon that runs the proxy, and
+//   - trust for that CA so agents accept the proxy's leaf certs.
+//
+// Trust is delivered two ways, matched to how each runtime resolves roots:
+//   - login-keychain trust (`agents trust install`, run behind the approved
+//     system extension) — honored by rustls/reqwest (Codex) and the AWS Go SDK
+//     (Bedrock), which consult the platform trust store; and
+//   - NODE_EXTRA_CA_CERTS — an ADDITIVE Node/Bun trust var, because Node does
+//     not read the macOS keychain by default. It only ADDS our CA; it never
+//     replaces the system roots, so unrelated HTTPS is unaffected.
+//
+// We deliberately do NOT set HTTPS_PROXY, HTTP_PROXY, SSL_CERT_FILE, or
+// AWS_CA_BUNDLE: routing is the extension's job, and SSL_CERT_FILE/AWS_CA_BUNDLE
+// would REPLACE the system root bundle and break unrelated traffic.
 //
 // Everything is parameterized by Target so the QA harness can drive
 // install→verify→uninstall→assert-clean in temp roots, never touching the real
@@ -27,9 +40,13 @@ const (
 	labelPrefix = "com.github.cipher982.agentobservatory"
 )
 
-// EnvVars are the variables the install sets globally so new agents route
-// through the proxy and trust its CA.
-var EnvVars = []string{"HTTPS_PROXY", "HTTP_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "AWS_CA_BUNDLE"}
+// EnvVars are the variables the install sets globally. Just one, and it is
+// ADDITIVE: NODE_EXTRA_CA_CERTS adds our CA to Node's trust store without
+// replacing the system roots, so Node-based agents (Claude Code) accept the
+// proxy while every other host keeps validating against the normal roots.
+// Routing is the NetworkExtension's job, so no proxy vars are set; rustls and
+// the AWS Go SDK get trust from the login keychain instead.
+var EnvVars = []string{"NODE_EXTRA_CA_CERTS"}
 
 // Target captures every path/knob the installer touches, so it can run against a
 // fake root in tests or the real system in production. Construct via DefaultTarget
@@ -67,10 +84,9 @@ func DefaultTarget(home, binPath string) Target {
 	}
 }
 
-func (t Target) caPEMPath() string  { return filepath.Join(t.CADir, "observatory-ca.pem") }
-func (t Target) plistPath() string  { return filepath.Join(t.LaunchDir, labelPrefix+".plist") }
-func (t Target) label() string      { return labelPrefix }
-func (t Target) httpsProxy() string { return "http://" + t.ProxyAddr }
+func (t Target) caPEMPath() string { return filepath.Join(t.CADir, "observatory-ca.pem") }
+func (t Target) plistPath() string { return filepath.Join(t.LaunchDir, labelPrefix+".plist") }
+func (t Target) label() string     { return labelPrefix }
 
 // Public path accessors (for CLI output).
 func (t Target) CAPEMPublic() string     { return t.caPEMPath() }
@@ -188,11 +204,7 @@ func (t Target) Uninstall() error {
 
 func (t Target) envMap(caPath string) map[string]string {
 	return map[string]string{
-		"HTTPS_PROXY":         t.httpsProxy(),
-		"HTTP_PROXY":          t.httpsProxy(),
 		"NODE_EXTRA_CA_CERTS": caPath,
-		"SSL_CERT_FILE":       caPath,
-		"AWS_CA_BUNDLE":       caPath,
 	}
 }
 

@@ -57,6 +57,10 @@ func runTrust(args []string) int {
 	}
 }
 
+// caCommonName must match the CA subject CN minted in wire.NewCA /
+// wire.LoadOrCreateCA, so `security find-certificate -c` can locate it.
+const caCommonName = "Agent Observatory Local CA"
+
 func loginKeychain() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -116,7 +120,18 @@ func trustStatus(caPath string) int {
 		fmt.Printf("trust: no CA file at %s\n", caPath)
 		return 0
 	}
-	// verify-cert against the CA itself is noisy; just report presence + a hint.
-	fmt.Printf("trust: CA present at %s; run `agents trust install` to trust it\n", caPath)
+	kc, err := loginKeychain()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "trust status: %v\n", err)
+		return 1
+	}
+	// Is OUR CA actually present in the login keychain? Match by the CA's common
+	// name; `security find-certificate -c` exits non-zero when absent.
+	found := exec.Command("security", "find-certificate", "-c", caCommonName, kc).Run() == nil
+	if found {
+		fmt.Printf("trust: CA is trusted in the login keychain (%s)\n", caPath)
+	} else {
+		fmt.Printf("trust: CA present on disk but not in the login keychain; run `agents trust install`\n")
+	}
 	return 0
 }

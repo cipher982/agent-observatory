@@ -238,6 +238,88 @@ func TestNonProviderHostTunnelsWithoutCapture(t *testing.T) {
 	}
 }
 
+// TestStreamingResponseIsNotBuffered proves the regression fix for the buffered
+// forward: an inspected upstream that streams its body in chunks (think SSE /
+// stream:true) must reach the client incrementally, not be withheld until the
+// whole generation completes. We have the upstream flush a first chunk, then
+// block on a gate until the client confirms it already saw that chunk.
+func TestStreamingResponseIsNotBuffered(t *testing.T) {
+	tmp := t.TempDir()
+
+	releaseUpstream := make(chan struct{})
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		fl, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("upstream ResponseWriter is not a Flusher")
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		_, _ = io.WriteString(w, "data: first\n\n")
+		fl.Flush()
+		// Don't finish the response until the client proves it got chunk one.
+		select {
+		case <-releaseUpstream:
+		case <-time.After(5 * time.Second):
+			t.Error("client never confirmed the first chunk; response was buffered")
+		}
+		_, _ = io.WriteString(w, "data: second\n\n")
+		fl.Flush()
+	}))
+	defer upstream.Close()
+	upURL, _ := url.Parse(upstream.URL)
+	upHost, upPort, _ := net.SplitHostPort(upURL.Host)
+
+	srv, err := NewServer(tmp, log.New(io.Discard, "", 0), time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetInspectHost(func(string) bool { return true })
+	upRoots := x509.NewCertPool()
+	upRoots.AddCert(upstream.Certificate())
+	srv.SetUpstreamTLS(&tls.Config{RootCAs: upRoots, MinVersion: tls.VersionTLS12})
+	proxyAddr, err := srv.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	caPEM, _ := os.ReadFile(srv.CAPath())
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(caPEM)
+	roots.AddCert(upstream.Certificate())
+	proxyURL, _ := url.Parse("http://" + proxyAddr)
+	client := &http.Client{Transport: &http.Transport{
+		Proxy:           http.ProxyURL(proxyURL),
+		TLSClientConfig: &tls.Config{RootCAs: roots},
+	}, Timeout: 10 * time.Second}
+
+	target := fmt.Sprintf("https://%s:%s/v1/messages", upHost, upPort)
+	req, _ := http.NewRequest("POST", target, bytes.NewReader([]byte(`{"system":"s","messages":[]}`)))
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client through proxy failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read just the first streamed chunk; if the proxy buffered, this blocks until
+	// the upstream timeout fires and the test fails there.
+	buf := make([]byte, len("data: first\n\n"))
+	if _, err := io.ReadFull(resp.Body, buf); err != nil {
+		t.Fatalf("reading first chunk: %v", err)
+	}
+	if string(buf) != "data: first\n\n" {
+		t.Fatalf("first chunk = %q, want %q", buf, "data: first\n\n")
+	}
+	close(releaseUpstream)
+
+	rest, _ := io.ReadAll(resp.Body)
+	if !bytes.Contains(rest, []byte("data: second")) {
+		t.Errorf("missing second chunk after release: %q", rest)
+	}
+}
+
 func testResolution(t *testing.T, dir, instructionText string) resolver.Resolution {
 	t.Helper()
 	p := filepath.Join(dir, "AGENTS.md")

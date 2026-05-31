@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command QA for the Agent Context Observatory backend.
+# One-command QA for the Agent Observatory backend.
 # build + vet + verbose tests + race detector across all packages.
 set -euo pipefail
 

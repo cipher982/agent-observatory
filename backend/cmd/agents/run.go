@@ -66,21 +66,21 @@ func runRun(args []string) int {
 
 	fmt.Printf("observatory: intercepting %s via %s (CA: %s)\n", runtime, proxyURL, caPath)
 
-	// Build the child env: route through the proxy + trust the ephemeral CA.
-	// Trust env varies by runtime stack:
-	//   - Node/Bun (claude, antigravity): NODE_EXTRA_CA_CERTS
+	// Build the child env: route HTTPS through the proxy + trust the ephemeral CA.
+	// This env is scoped to THIS child process (cmd.Env), so unlike the global
+	// install it can use the per-runtime trust vars without any blast radius:
+	//   - Node/Bun (claude, antigravity): NODE_EXTRA_CA_CERTS (additive)
 	//   - Rust/rustls (codex): SSL_CERT_FILE
 	//   - AWS SDK (bedrock path inside claude): AWS_CA_BUNDLE
-	// We set all three; harmless where unused.
+	// NO_PROXY keeps loopback direct so the proxy can reach upstreams itself.
 	env := append(os.Environ(),
 		"HTTPS_PROXY="+proxyURL,
 		"https_proxy="+proxyURL,
-		"HTTP_PROXY="+proxyURL,
-		"http_proxy="+proxyURL,
+		"NO_PROXY=127.0.0.1,localhost,::1",
+		"no_proxy=127.0.0.1,localhost,::1",
 		"NODE_EXTRA_CA_CERTS="+caPath,
 		"SSL_CERT_FILE="+caPath,
 		"AWS_CA_BUNDLE="+caPath,
-		"NODE_OPTIONS=--use-bundled-ca", // ensure NODE_EXTRA_CA_CERTS is honored
 	)
 
 	cmd := exec.Command(bin, cliArgs...)

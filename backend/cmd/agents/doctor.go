@@ -29,9 +29,9 @@ func runDoctor(args []string) int {
 		mechad  string // how interception is achieved
 	}
 	probes := []probe{
-		{"claude", "claude", "Bun/Node + @aws-sdk (Bedrock)", "HTTPS_PROXY + NODE_EXTRA_CA_CERTS; forwards SigV4 byte-identical"},
-		{"codex", "codex", "Rust/rustls (reqwest)", "HTTPS_PROXY + SSL_CERT_FILE"},
-		{"antigravity", "antigravity", "Node (opaque .pb transcripts)", "HTTPS_PROXY + NODE_EXTRA_CA_CERTS (untested)"},
+		{"claude", "claude", "Bun/Node + @aws-sdk (Bedrock)", "NE routes provider flows; trust via additive NODE_EXTRA_CA_CERTS (Node ignores the keychain); SigV4 forwarded byte-identical"},
+		{"codex", "codex", "Rust/rustls (reqwest)", "NE routes provider flows; trust via login keychain (rustls platform verifier)"},
+		{"antigravity", "antigravity", "Node (opaque .pb transcripts)", "NE routes provider flows; trust via NODE_EXTRA_CA_CERTS (untested)"},
 	}
 
 	for _, p := range probes {
@@ -59,10 +59,12 @@ func runDoctor(args []string) int {
 		fmt.Println()
 	}
 
-	fmt.Println("After `agents install`, newly launched agents route through Observatory automatically.")
+	fmt.Println("Routing is handled by the NetworkExtension transparent proxy: the kernel")
+	fmt.Println("sends only allowlisted provider :443 flows to Observatory, so unrelated")
+	fmt.Println("traffic is never diverted (no global HTTPS_PROXY hijack).")
 	fmt.Println("Verified capture uses a local MITM hop between the agent process and Observatory.")
-	fmt.Println("Trust is injected through NODE_EXTRA_CA_CERTS / SSL_CERT_FILE / AWS_CA_BUNDLE,")
-	fmt.Println("never by installing Observatory's CA into the macOS System keychain.")
+	fmt.Println("Trust lives in your LOGIN keychain (never the System keychain), plus the")
+	fmt.Println("additive NODE_EXTRA_CA_CERTS for Node, which does not read the keychain.")
 	fmt.Println("Provider-bound upstream TLS still uses the normal system trust store.")
 	return 0
 }

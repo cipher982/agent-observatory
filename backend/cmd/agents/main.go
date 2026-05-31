@@ -1,4 +1,4 @@
-// Command agents is the headless engine of the Agent Context Observatory.
+// Command agents is the headless engine of Agent Observatory.
 //
 // It discovers running coding-agent sessions from on-disk CLI transcripts,
 // resolves the effective agent context for each (scope + activation), and
@@ -34,7 +34,7 @@ func main() {
 			sub = first
 			args = args[1:]
 		case first == "version", first == "-v", first == "--version":
-			fmt.Println("agents-observatory 0.1.0")
+			fmt.Println("agent-observatory 0.1.0")
 			return
 		case first == "help", first == "-h", first == "--help":
 			usage()
@@ -71,10 +71,11 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `agents — Agent Context Observatory engine
+	fmt.Fprint(os.Stderr, `agents — Agent Observatory engine
 
 Usage:
-  agents install                           ambient setup: daemon + CA + global env
+  agents install                           set up the proxy daemon + stable CA + Node trust
+  agents trust install|remove|status       manage the local CA's login-keychain trust
   agents uninstall                         fully reverse the install
   agents status                            show install state
   agents monitor [--port N]                always-on proxy + API + live SSE stream
@@ -83,8 +84,9 @@ Usage:
   agents context explain [path] [--json]   resolved context for a path
   agents doctor wire                       per-runtime wire-capability report
 
-After 'agents install', use your agents normally. Newly launched agents are
-captured automatically — no wrapper or managed launch.
+Routing is handled by the app's NetworkExtension (only provider flows are
+diverted). After setup, use your agents normally — newly launched agents are
+captured automatically, with no wrapper or global proxy hijack.
 The SwiftUI app and CLI all consume the same engine.
 `)
 }

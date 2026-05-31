@@ -143,13 +143,16 @@ There are two evidence levels:
 | **Observed** | Read from local CLI transcripts. | Passive; no proxy required. |
 | **Verified** | Captured from outbound LLM requests. | One explicit local install. |
 
-Use the onboarding panel to copy the bundled-helper command after you have read
-the trust explanation. It installs a local launchd daemon, a stable local CA, and
-the proxy/trust environment needed by newly launched agents.
+Use the onboarding panel to enable live capture after you have read the trust
+explanation. It installs a local launchd daemon and a stable local CA, trusts
+that CA in your **login keychain**, and enables a **NetworkExtension transparent
+proxy** that routes only allowlisted LLM-provider flows to the local proxy.
 
-Then use Claude, Codex, and other agents normally. Newly launched agents that
-honor standard proxy/trust environment variables route through the local
-Observatory proxy automatically.
+Then use Claude, Codex, and other agents normally. The system extension diverts
+only provider traffic to Observatory; everything else is untouched. There is no
+global `HTTPS_PROXY` hijack. The one env var the install sets is the *additive*
+`NODE_EXTRA_CA_CERTS`, because Node-based agents (Claude Code) don't read the
+macOS keychain — it adds Observatory's CA without replacing the system roots.
 
 No wrapper command in the primary flow. No managed launch. No browser extension.
 The onboarding panel also exposes the reset command; the equivalent CLI command
@@ -231,8 +234,15 @@ those flows to the local proxy, which terminates TLS and reads only derived
 facts. For agents to accept the local proxy's certificates, Observatory installs
 its CA into your **login keychain** (per-user, never the System keychain) at the
 moment you approve the system extension; `agents uninstall` (and disabling
-capture) removes that trust. A legacy environment-variable proxy path remains
-available as a fallback for runtimes the transparent proxy can't route.
+capture) removes that trust.
+
+One honest caveat on trust: rustls-based runtimes (Codex) and the AWS Go SDK
+(Bedrock) read the macOS keychain, so login-keychain trust alone covers them.
+Node/Bun (Claude Code) does **not** read the keychain by default, so the install
+also sets the *additive* `NODE_EXTRA_CA_CERTS` for it. That variable only adds
+Observatory's CA — it never replaces the system roots — so unrelated HTTPS is
+unaffected. The install sets **no** `HTTPS_PROXY`/`HTTP_PROXY` and **no**
+root-replacing `SSL_CERT_FILE`/`AWS_CA_BUNDLE`: routing is the extension's job.
 
 ```mermaid
 sequenceDiagram
@@ -279,7 +289,8 @@ Important boundaries:
 
 | Command | Purpose |
 | --- | --- |
-| `agents install` | Install ambient capture: daemon, local CA path, and process env. |
+| `agents install` | Install ambient capture: proxy daemon, stable local CA, and additive Node trust. |
+| `agents trust install` | Trust the local CA in your login keychain (run behind the approved extension). |
 | `agents status` | Show installed, partial, or absent setup state. |
 | `agents uninstall` | Fully reverse the install. |
 | `agents serve` | Run the localhost JSON API only (default subcommand; no proxy). |

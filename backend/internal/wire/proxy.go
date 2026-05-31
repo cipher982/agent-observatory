@@ -23,10 +23,12 @@ type Capture struct {
 	When         time.Time
 }
 
-// Proxy is an HTTPS-intercepting forward proxy. Agents reach it via HTTPS_PROXY;
-// it terminates TLS using a per-host leaf from the ephemeral CA, parses the LLM
-// request body, forwards it BYTE-IDENTICAL upstream (preserving SigV4), and
-// invokes OnCapture for each parsed request.
+// Proxy is an HTTPS-intercepting forward proxy. Provider flows reach it via the
+// NetworkExtension relay (or HTTPS_PROXY in the dev `agents run` path) as an
+// HTTP CONNECT. For allowlisted hosts it terminates TLS using a per-host leaf
+// from the CA, parses the LLM request body, forwards it BYTE-IDENTICAL upstream
+// (preserving SigV4), and invokes OnCapture for each parsed request. Non-
+// allowlisted CONNECT targets are tunneled opaquely without TLS termination.
 type Proxy struct {
 	ca        *CA
 	logger    *log.Logger
@@ -174,39 +176,44 @@ func (p *Proxy) pump(host, port string, client *tls.Conn) {
 			}
 		}
 
-		resp, err := p.forward(host, port, req, bodyBytes)
+		resp, upstream, err := p.forward(host, port, req, bodyBytes)
 		if err != nil {
 			p.logger.Printf("[wire] forward %s%s: %v", host, req.URL.Path, err)
 			writeBadGateway(client)
 			return
 		}
-		// Relay the upstream response back to the client verbatim.
-		if err := resp.Write(client); err != nil {
-			resp.Body.Close()
-			return
-		}
+		// Relay the upstream response back to the client verbatim. resp.Write
+		// streams the body as it arrives off the still-open upstream connection,
+		// so provider streaming (SSE / stream:true) reaches the agent token by
+		// token instead of being buffered until generation completes.
+		writeErr := resp.Write(client)
 		resp.Body.Close()
-		if req.Close || resp.Close {
+		upstream.Close()
+		if writeErr != nil || req.Close || resp.Close {
 			return
 		}
 	}
 }
 
-// forward sends the request to the real upstream, BYTE-IDENTICAL: same method,
+// forward sends the request to the real upstream BYTE-IDENTICAL: same method,
 // path, query, headers, and body. This preserves SigV4 (and any other signed
 // material) so Bedrock accepts the original signature without re-signing.
-func (p *Proxy) forward(host, port string, req *http.Request, body []byte) (*http.Response, error) {
-	upstream := &net.Dialer{Timeout: 15 * time.Second}
-	rawConn, err := upstream.Dial("tcp", net.JoinHostPort(host, port))
+//
+// The returned response body is still attached to the live upstream connection,
+// so the caller can stream it straight back to the agent. The caller MUST close
+// the returned net.Conn once the response has been relayed.
+func (p *Proxy) forward(host, port string, req *http.Request, body []byte) (*http.Response, net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 15 * time.Second}
+	rawConn, err := dialer.Dial("tcp", net.JoinHostPort(host, port))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	upTLS := p.upstreamTLS.Clone()
 	upTLS.ServerName = host
 	tlsConn := tls.Client(rawConn, upTLS)
 	if err := tlsConn.Handshake(); err != nil {
 		rawConn.Close()
-		return nil, fmt.Errorf("upstream tls handshake: %w", err)
+		return nil, nil, fmt.Errorf("upstream tls handshake: %w", err)
 	}
 
 	// Reconstruct the exact outbound request. We do NOT mutate signed headers.
@@ -220,20 +227,14 @@ func (p *Proxy) forward(host, port string, req *http.Request, body []byte) (*htt
 
 	if err := outReq.Write(tlsConn); err != nil {
 		tlsConn.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	resp, err := http.ReadResponse(bufio.NewReader(tlsConn), outReq)
 	if err != nil {
 		tlsConn.Close()
-		return nil, err
+		return nil, nil, err
 	}
-	// Buffer the body fully so we can close the upstream conn and still relay it.
-	rb, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	tlsConn.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(rb))
-	resp.ContentLength = int64(len(rb))
-	return resp, nil
+	return resp, tlsConn, nil
 }
 
 func writeBadGateway(w io.Writer) {

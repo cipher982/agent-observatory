@@ -61,8 +61,15 @@ func TestInstallThenUninstallIsClean(t *testing.T) {
 	if !st.ProfileBlock || !st.PlistExists {
 		t.Fatalf("post-install status incomplete: %+v", st)
 	}
-	if se.setenv["HTTPS_PROXY"] == "" {
-		t.Errorf("HTTPS_PROXY not set via launchctl")
+	if se.setenv["NODE_EXTRA_CA_CERTS"] == "" {
+		t.Errorf("NODE_EXTRA_CA_CERTS not set via launchctl")
+	}
+	// Routing is the NE extension's job — the install must NOT set proxy vars or
+	// root-replacing trust vars (that was the old global-hijack blast radius).
+	for _, banned := range []string{"HTTPS_PROXY", "HTTP_PROXY", "SSL_CERT_FILE", "AWS_CA_BUNDLE"} {
+		if _, ok := se.setenv[banned]; ok {
+			t.Errorf("install set %s; routing is the extension's job and this breaks unrelated traffic", banned)
+		}
 	}
 	if !se.loaded[tgt.plistPath()] {
 		t.Errorf("daemon not loaded")
@@ -116,8 +123,8 @@ func TestIdempotentInstall(t *testing.T) {
 	if n := strings.Count(string(data), beginMarker); n != 1 {
 		t.Errorf("managed block appears %d times, want 1", n)
 	}
-	if n := strings.Count(string(data), "export HTTPS_PROXY="); n != 1 {
-		t.Errorf("HTTPS_PROXY exported %d times, want 1", n)
+	if n := strings.Count(string(data), "export NODE_EXTRA_CA_CERTS="); n != 1 {
+		t.Errorf("NODE_EXTRA_CA_CERTS exported %d times, want 1", n)
 	}
 	// Original content survives exactly once.
 	if n := strings.Count(string(data), "export PATH=/usr/bin"); n != 1 {
@@ -191,7 +198,7 @@ func TestStatusReflectsState(t *testing.T) {
 	if !st.Installed {
 		t.Errorf("post-install not reported installed: %+v", st)
 	}
-	if st.EnvVars["HTTPS_PROXY"] == "" {
+	if st.EnvVars["NODE_EXTRA_CA_CERTS"] == "" {
 		t.Errorf("status didn't parse env from profile block")
 	}
 	tgt.Uninstall()

@@ -120,8 +120,8 @@ struct OnboardingView: View {
     private var activationStrip: some View {
         Grid(horizontalSpacing: 12, verticalSpacing: 12) {
             GridRow {
-                OnboardingMetric(value: "\(max(engine.sessions.count, 3))", label: "sample sessions", symbol: "sidebar.leading")
-                OnboardingMetric(value: "\(max(engine.liveEvents.count, 2))", label: "sample requests", symbol: "waveform.path.ecg")
+                OnboardingMetric(value: "\(engine.sessions.count)", label: "sample sessions", symbol: "sidebar.leading")
+                OnboardingMetric(value: "\(engine.liveEvents.count)", label: "sample requests", symbol: "waveform.path.ecg")
                 OnboardingMetric(value: engine.mode.rawValue, label: "current mode", symbol: "switch.2")
             }
         }
@@ -134,7 +134,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Live capture setup")
                             .font(.title2.weight(.bold))
-                        Text("Install once, restart your agent, then keep using Claude, Codex, or other supported runtimes normally.")
+                        Text("Approve the system extension, trust the local CA once, then keep using Claude, Codex, or other supported runtimes normally.")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -246,7 +246,7 @@ struct OnboardingView: View {
         if engine.installReady {
             return "Installed. Newly launched agents can be captured in Live mode."
         }
-        return "Copies the bundled helper path, installs a LaunchAgent, sets proxy/trust env, and can be fully reversed with uninstall."
+        return "Installs the local proxy daemon + CA, trusts it in your login keychain, and adds one additive Node trust var. Fully reversed by uninstall."
     }
 
     private var installStatusColor: Color {
@@ -338,7 +338,7 @@ private struct TrustBoundaryPanel: View {
                 .font(.headline)
                 .foregroundStyle(.green)
 
-            Text("Verified capture uses a local CA so agent processes can trust Observatory's loopback proxy for known LLM provider hosts. The proxy extracts derived request facts, not stored raw prompt bodies.")
+            Text("A system extension routes only known LLM provider flows to Observatory's loopback proxy; everything else is untouched. Agents trust the proxy via a local CA in your login keychain. The proxy extracts derived request facts, not stored raw prompt bodies.")
                 .font(.callout)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -350,7 +350,7 @@ private struct TrustBoundaryPanel: View {
                 }
                 GridRow {
                     TrustFact(symbol: "internaldrive", title: "Stored", detail: "Endpoint, prompt length, tool names, evidence marks")
-                    TrustFact(symbol: "trash", title: "Reversible", detail: "Reset removes env, LaunchAgent, and CA state")
+                    TrustFact(symbol: "trash", title: "Reversible", detail: "Reset removes the extension, daemon, keychain trust, and CA state")
                 }
             }
         }
