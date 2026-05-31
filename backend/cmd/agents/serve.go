@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -81,18 +82,39 @@ func runServe(args []string) int {
 	return 0
 }
 
-// withCORS allows the SwiftUI app (WKWebView/URLSession) and the web dashboard
-// to call the API from any local origin. Loopback-only bind keeps this safe.
+// withCORS scopes cross-origin access to localhost origins only. The native app
+// uses URLSession (not subject to CORS), so the only legitimate browser caller
+// is a future local dashboard served from loopback. A wildcard ACAO would let
+// ANY website the user visits read /api/sessions and /api/explain?path=... from
+// the always-on daemon, so we echo back only localhost/127.0.0.1 origins.
 func withCORS(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		if origin := r.Header.Get("Origin"); isLoopbackOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// isLoopbackOrigin reports whether an Origin header points at the local machine.
+// Anything else (a real website) gets no ACAO header and is blocked by the
+// browser same-origin policy.
+func isLoopbackOrigin(origin string) bool {
+	if origin == "" {
+		return false
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "127.0.0.1" || host == "localhost" || host == "::1"
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

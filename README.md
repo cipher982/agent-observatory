@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="app/Observatory/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" width="96" alt="Agent Context Observatory icon">
+  <img src="app/Observatory/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" width="96" alt="Agent Observatory icon">
 </p>
 
-<h1 align="center">Agent Context Observatory</h1>
+<h1 align="center">Agent Observatory</h1>
 
 <p align="center">
   <strong>See what your coding agents actually received.</strong>
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/live-feed.png" width="900" alt="Agent Context Observatory live feed showing verified agent sessions and captured LLM requests">
+  <img src="docs/screenshots/live-feed.png" width="900" alt="Agent Observatory live feed showing verified agent sessions and captured LLM requests">
 </p>
 
 ## Try It
@@ -76,7 +76,7 @@ Coding-agent context is mostly invisible. You usually discover a bad instruction
 stack, missing tool, stale skill, or provider mismatch only after the agent makes
 a strange decision.
 
-Agent Context Observatory turns that hidden state into a product surface:
+Agent Observatory turns that hidden state into a product surface:
 
 | Before | With Observatory |
 | --- | --- |
@@ -221,12 +221,18 @@ and no cloud database.
 
 Yes, verified capture uses a local MITM hop for inspected provider requests.
 That explicit local interception is what makes HTTPS body inspection possible.
-The install exports proxy environment variables for newly launched processes, so
-Observatory may receive non-agent HTTPS CONNECT traffic too. By default, it only
-terminates TLS for known LLM provider hosts and tunnels unrelated hosts without
-reading request bodies. Install writes its managed shell block after any existing
-profile content, so it can override prior `HTTP_PROXY` / `HTTPS_PROXY` exports
-for new shells until `agents uninstall` removes the block.
+
+Capture ingress is a macOS **NetworkExtension transparent proxy** (a signed,
+user-approved system extension). The kernel routes only outbound provider flows
+to Observatory; all other traffic flows normally **by construction** — there is
+no global `HTTPS_PROXY`/`HTTP_PROXY` hijack and unrelated hosts are never
+diverted. The extension matches the LLM-provider allowlist by TLS SNI and relays
+those flows to the local proxy, which terminates TLS and reads only derived
+facts. For agents to accept the local proxy's certificates, Observatory installs
+its CA into your **login keychain** (per-user, never the System keychain) at the
+moment you approve the system extension; `agents uninstall` (and disabling
+capture) removes that trust. A legacy environment-variable proxy path remains
+available as a fallback for runtimes the transparent proxy can't route.
 
 ```mermaid
 sequenceDiagram
@@ -234,7 +240,7 @@ sequenceDiagram
     participant Proxy as Observatory local proxy
     participant Provider as OpenAI / Anthropic / Bedrock
 
-    Agent->>Proxy: HTTPS via local proxy<br/>trust injected by env vars
+    Agent->>Proxy: provider flow routed by<br/>NetworkExtension transparent proxy
     Note over Proxy: Extract derived facts:<br/>prompt length, instruction match,<br/>endpoint, tool names
     Proxy->>Provider: Normal upstream TLS<br/>using system roots
     Provider-->>Proxy: Provider response
@@ -244,7 +250,11 @@ sequenceDiagram
 Important boundaries:
 
 - Observatory's CA is local to the client-to-proxy leg for inspected hosts.
-- The CA is not installed into the macOS System keychain.
+- The CA is installed into your per-user **login** keychain (behind the system
+  extension approval), never the macOS **System** keychain, and is removed on
+  uninstall.
+- Only allowlisted provider flows are routed to the proxy; unrelated traffic is
+  never diverted, so the CA is never exercised against non-provider hosts.
 - A stable CA certificate and private key are stored under Observatory's local
   state directory so the ambient daemon can restart without breaking trust.
 - Upstream provider TLS still uses normal system trust.
@@ -272,6 +282,7 @@ Important boundaries:
 | `agents install` | Install ambient capture: daemon, local CA path, and process env. |
 | `agents status` | Show installed, partial, or absent setup state. |
 | `agents uninstall` | Fully reverse the install. |
+| `agents serve` | Run the localhost JSON API only (default subcommand; no proxy). |
 | `agents monitor --demo` | Run the API, SSE stream, proxy, and sample feed. |
 | `agents sessions --limit 20` | Print recent sessions and evidence marks. |
 | `agents context explain /path/to/project` | Show resolved context for a workspace. |

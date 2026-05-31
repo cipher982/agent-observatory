@@ -174,9 +174,10 @@ func (t Target) Uninstall() error {
 	if err := removeIfExists(t.plistPath()); err != nil {
 		errs = append(errs, "plist: "+err.Error())
 	}
-	// 4) remove CA + state.
-	if err := os.RemoveAll(t.CADir); err != nil {
-		errs = append(errs, "ca: "+err.Error())
+	// 4) remove CA + all runtime state (CA, daemon.log, persisted wire-*.json).
+	// CADir lives under StateDir, so removing StateDir reverses install fully.
+	if err := os.RemoveAll(t.StateDir); err != nil {
+		errs = append(errs, "state: "+err.Error())
 	}
 
 	if len(errs) > 0 {

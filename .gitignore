@@ -11,3 +11,6 @@ xcuserdata/
 
 # wire capture state (derived facts; still local-only)
 backend/.observatory/
+
+# internal pre-launch working doc, not for the public repo
+LAUNCH-AUDIT.md

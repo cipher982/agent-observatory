@@ -9,8 +9,6 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    GENERATE_INFOPLIST_FILE: YES
-    PRODUCT_NAME: "Agent Observatory"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_HARDENED_RUNTIME: YES
@@ -25,6 +23,14 @@ targets:
     platform: macOS
     sources:
       - path: Observatory
+    entitlements:
+      path: Observatory/Observatory.entitlements
+      properties:
+        com.apple.developer.system-extension.install: true
+        com.apple.developer.networking.networkextension:
+          - app-proxy-provider-systemextension
+        com.apple.security.application-groups:
+          - group.com.github.cipher982.agentobservatory
     info:
       path: Observatory/Info.plist
       properties:
@@ -32,13 +38,22 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSMinimumSystemVersion: "26.0"
-        NSHumanReadableCopyright: "Agent Context Observatory"
+        NSHumanReadableCopyright: "Agent Observatory"
         # Allow plaintext loopback HTTP to the local engine.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
     settings:
       base:
+        PRODUCT_NAME: "Agent Observatory"
+        GENERATE_INFOPLIST_FILE: YES
+        # NetworkExtension is a restricted entitlement → manual signing + a
+        # provisioning profile are required for a Developer ID build/notarization.
+        # Left as a local-dev default here; David fills in the profile specifier
+        # for the signed/notarized release (see ne-epic-handoff.md).
         CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - target: TransparentProxyExtension
+        embed: true
     preBuildScripts:
       - name: Build & embed Go engine
         basedOnDependencyAnalysis: false
@@ -52,3 +67,47 @@ targets:
           /usr/local/go/bin/go build -o "$RES/agents" ./cmd/agents 2>/dev/null \
             || go build -o "$RES/agents" ./cmd/agents
           echo "embedded engine at $RES/agents"
+
+  TransparentProxyExtension:
+    type: system-extension
+    platform: macOS
+    sources:
+      - path: TransparentProxyExtension
+    entitlements:
+      path: TransparentProxyExtension/TransparentProxyExtension.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - app-proxy-provider-systemextension
+        com.apple.security.application-groups:
+          - group.com.github.cipher982.agentobservatory
+    info:
+      path: TransparentProxyExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Agent Observatory Proxy
+        LSMinimumSystemVersion: "26.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.app-proxy
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).TransparentProxyProvider
+        NetworkExtension:
+          NEProviderClasses:
+            com.apple.networkextension.app-proxy: $(PRODUCT_MODULE_NAME).TransparentProxyProvider
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        SWIFT_VERSION: "5.0"
+
+  ObservatoryTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ObservatoryTests
+      # Compile the pure-logic sources directly into the test bundle. They have no
+      # NetworkExtension dependency, and a system-extension executable target can't
+      # be linked/@testable-imported, so we build them here rather than import.
+      - path: TransparentProxyExtension/SNI.swift
+      - path: TransparentProxyExtension/Allowlist.swift
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"

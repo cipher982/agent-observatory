@@ -1,4 +1,4 @@
-# Agent Context Observatory Launch Note
+# Agent Observatory Launch Note
 
 I built a local macOS app that shows what context coding agents actually
 received: instructions, activated skills, available tools, transcript evidence,
@@ -11,8 +11,9 @@ for the assembled prompt/tool state. This app makes that state inspectable.
 The first release is local-first. It reads local transcripts passively, verifies
 outbound requests through an install-once local proxy, and stores only derived
 facts instead of raw prompt bodies. After install, people use their agents
-normally; agents that honor standard proxy/trust environment variables are
-captured without a wrapper command or hosted account in the primary flow. The
+normally; newly launched agents that honor standard proxy/trust environment
+variables are captured without a wrapper command or hosted account in the
+primary flow (already-running shells inherit the setup only after they restart). The
 native app ships as a DMG with the normal app-to-Applications drag install,
 includes a demo mode so the product is visible immediately, then exposes live
 capture as a separate opt-in setup inside onboarding.

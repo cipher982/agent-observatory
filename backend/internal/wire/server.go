@@ -61,6 +61,11 @@ func newServerWithCA(ca *CA, logger *log.Logger) *Server {
 
 // Subscribe returns a channel that receives every future capture, plus an
 // unsubscribe func. Buffered so a slow consumer never blocks the proxy.
+//
+// Unsubscribe deletes the channel from the registry but deliberately does NOT
+// close it: record() sends without holding the lock, so closing here would race
+// a concurrent send and panic the always-on daemon. The channel is simply
+// dropped and garbage-collected once the SSE handler returns.
 func (s *Server) Subscribe() (<-chan Capture, func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -71,10 +76,7 @@ func (s *Server) Subscribe() (<-chan Capture, func()) {
 	return ch, func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if c, ok := s.subscribers[id]; ok {
-			close(c)
-			delete(s.subscribers, id)
-		}
+		delete(s.subscribers, id)
 	}
 }
 
@@ -97,9 +99,18 @@ func (s *Server) SetSession(id string) {
 // captures take (used by demo mode to populate the live feed with mock data).
 func (s *Server) Inject(c Capture) { s.record(c) }
 
+// maxCaptures bounds the in-memory capture history. The daemon is always-on, so
+// an unbounded slice would grow without limit across a work session (each entry
+// retains the full assembled prompt text). We keep the most recent N.
+const maxCaptures = 500
+
 func (s *Server) record(c Capture) {
 	s.mu.Lock()
 	s.captures = append(s.captures, c)
+	if len(s.captures) > maxCaptures {
+		// Drop oldest; copy to a fresh slice so the backing array can shrink.
+		s.captures = append([]Capture(nil), s.captures[len(s.captures)-maxCaptures:]...)
+	}
 	subs := make([]chan Capture, 0, len(s.subscribers))
 	for _, ch := range s.subscribers {
 		subs = append(subs, ch)

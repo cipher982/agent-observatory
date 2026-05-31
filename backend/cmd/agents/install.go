@@ -68,6 +68,9 @@ func runUninstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "uninstall: %v\n", err)
 		return 1
 	}
+	// Remove keychain CA trust (NE path) BEFORE deleting the CA file, since the
+	// removal references the cert on disk. No-op/non-fatal if it was never trusted.
+	_ = trustRemove(t.CAPEMPublic())
 	if err := t.Uninstall(); err != nil {
 		fmt.Fprintf(os.Stderr, "uninstall completed with issues: %v\n", err)
 		return 1

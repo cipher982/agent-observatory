@@ -30,7 +30,7 @@ func main() {
 	sub := "serve" // headless API is the default — that's the product's job
 	if len(args) > 0 {
 		switch first := args[0]; {
-		case first == "serve", first == "sessions", first == "context", first == "run", first == "doctor", first == "monitor", first == "install", first == "uninstall", first == "status":
+		case first == "serve", first == "sessions", first == "context", first == "run", first == "doctor", first == "monitor", first == "install", first == "uninstall", first == "status", first == "trust":
 			sub = first
 			args = args[1:]
 		case first == "version", first == "-v", first == "--version":
@@ -65,6 +65,8 @@ func main() {
 		os.Exit(runUninstall(args))
 	case "status":
 		os.Exit(runStatus(args))
+	case "trust":
+		os.Exit(runTrust(args))
 	}
 }
 
