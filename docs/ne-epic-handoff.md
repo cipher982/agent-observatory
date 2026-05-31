@@ -28,16 +28,30 @@ everything else passes through untouched. The Go proxy (unchanged) terminates TL
 local CA and parses bodies. **No global env-var hijack.** CA trust is delivered to the login
 keychain behind the approved sysext (`agents trust install`).
 
-## Your interactive steps
+## Portal registration — DONE (automated via browser-harness, 2026-05-31)
 
-### 1. Apple Developer portal (one-time)
-- Create/confirm two **App IDs**:
-  - App: `com.github.cipher982.agentobservatory.Observatory`
-  - Extension: `com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension`
-- Enable **Network Extensions** capability on both App IDs.
-- Create an **App Group**: `group.com.github.cipher982.agentobservatory`; add to both App IDs.
-- Generate **Developer ID** provisioning profiles for both (the NE entitlement is restricted,
-  so a profile is required even for Developer-ID distribution).
+All three identifiers are registered on the portal (Team `M49WM6JSW8`, Individual):
+- ✅ App Group `group.com.github.cipher982.agentobservatory`
+- ✅ App ID `com.github.cipher982.agentobservatory.Observatory` — App Groups + Network Extensions + System Extension
+- ✅ App ID `com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension` — App Groups + Network Extensions
+
+Team ID `M49WM6JSW8` is wired into `app/project.yml` (`DEVELOPMENT_TEAM`).
+
+## The one true remaining blocker: a Developer ID certificate
+
+Your Mac has an **Apple Development** cert but **no Developer ID Application** cert
+(`security find-identity -p codesigning` → 0 Developer ID). A signed/notarized build needs it,
+and creating it is the irreducible manual step: the private key must be generated in *your*
+login keychain.
+
+### Step 0 — Create a Developer ID Application certificate (Keychain Access, ~3 min) — YOU
+- Keychain Access → Certificate Assistant → **Request a Certificate from a Certificate
+  Authority** → "Saved to disk" → save the `.certSigningRequest` (this generates your key locally).
+- developer.apple.com → Certificates → **+** → **Developer ID Application** → upload the CSR →
+  download → double-click to install. Then tell me — I can drive provisioning-profile creation
+  on the portal from there; signing config in `project.yml` is already wired.
+
+### Your remaining interactive steps
 
 ### 2. Signing config (project.yml)
 Switch both targets to manual signing and point at your profiles. In `app/project.yml`, the

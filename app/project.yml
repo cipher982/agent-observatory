@@ -48,8 +48,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         # NetworkExtension is a restricted entitlement → manual signing + a
         # provisioning profile are required for a Developer ID build/notarization.
-        # Left as a local-dev default here; David fills in the profile specifier
-        # for the signed/notarized release (see ne-epic-handoff.md).
+        DEVELOPMENT_TEAM: M49WM6JSW8
         CODE_SIGN_STYLE: Automatic
     dependencies:
       - target: TransparentProxyExtension
@@ -94,6 +93,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension
+        DEVELOPMENT_TEAM: M49WM6JSW8
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: YES
         SWIFT_VERSION: "5.0"
