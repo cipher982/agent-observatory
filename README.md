@@ -245,10 +245,12 @@ keychain root isn't enough:
 
 - **Claude Code (Node/Bun)** doesn't read the macOS keychain by default → the
   install sets the *additive* `NODE_EXTRA_CA_CERTS`.
-- **Codex CLI** uses rustls + native-tls, **not** `rustls-platform-verifier`, so
-  keychain trust alone is unreliable (its WebSocket path rejected our CA in
-  testing) → the install sets the *additive* `CODEX_CA_CERTIFICATE` (Codex's own
-  custom-CA var).
+- **Codex CLI** talks over WebSockets (`wss://…/responses`), which can't be
+  usefully inspected. Observatory replies `426 Upgrade Required` to that upgrade,
+  which Codex maps to an instant HTTP fallback on the same endpoint — and the
+  HTTP request *is* fully captured. For that HTTP path's trust, the install sets
+  the *additive* `CODEX_CA_CERTIFICATE` (Codex's own custom-CA var), since Codex
+  uses rustls/native-tls rather than the macOS keychain.
 - **Bedrock via the AWS Go SDK** reads the login keychain directly → no env var.
 
 Both env vars only *add* Observatory's CA; they never replace the system roots,
@@ -359,9 +361,12 @@ Per-runtime CA trust (`NODE_EXTRA_CA_CERTS`, `CODEX_CA_CERTIFICATE`):
 - **Node/Bun (Claude Code):** a client that passes an explicit `ca:` option,
   sanitizes its env, or embeds its own runtime won't pick up
   `NODE_EXTRA_CA_CERTS`. Bun honors only its own CA store for some operations.
-- **Codex CLI:** uses rustls + native-tls, not `rustls-platform-verifier`, so it
-  ignores the keychain; it honors `CODEX_CA_CERTIFICATE` (which we set) and
-  `SSL_CERT_FILE`. Verified against codex 0.134.x.
+- **Codex CLI:** its primary `wss://…/responses` transport can't be inspected, so
+  the proxy replies `426` and Codex falls back to its HTTP endpoint (which *is*
+  captured). HTTP-path trust uses the additive `CODEX_CA_CERTIFICATE` (Codex uses
+  rustls/native-tls, not the keychain). Verified against codex 0.134.x. Other
+  provider WebSockets with no HTTP fallback (e.g. OpenAI Realtime `/v1/realtime`)
+  are relayed untouched, not captured — so they keep working.
 - **Bedrock (AWS Go SDK):** reads the login keychain directly, needs no env.
 - These vars add a trusted root for inheriting processes; removed by
   `agents uninstall`.

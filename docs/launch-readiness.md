@@ -60,7 +60,7 @@
 - **Remaining:** run a real **Claude Code** (HTTP-path) agent under dev-scope and
   confirm it both captures AND completes its turn (the harness proves the forward;
   this proves a real agent's full round-trip). Then decide global enablement.
-- Scope Codex out honestly (WebSocket transport rejects our CA).
+- Codex is SUPPORTED (426 → HTTP fallback, fully captured); no longer scoped out.
 
 The caveats a poster must own regardless (in README Known Limitations): per-runtime
 CA hints; already-running agents must restart (app warns); HTTP/3/QUIC not
@@ -104,7 +104,7 @@ curl --cacert ~/.local/state/agent-observatory/ca/observatory-ca.pem \
 | — | Codex (WebSocket) capture | ✅ via 426→HTTP fallback | Proxy replies 426 to provider WS upgrades; Codex falls back to HTTP instantly and is fully captured (43k sys chars, 22 tools). Verified via explicit-proxy isolation; NE-path verification pending (shared Go code). |
 | — | Safe on-host iteration | ✅ | dev-scope allowlist (`/tmp/agent-observatory-dev-scope`) + signed `devharness` + menu kill switch; lets us test the real kernel path without a VM or risking host agents. See `docs/scoped-capture-dev.md`. |
 | D7 | Launch-blocker sweep: every original-audit P0/P1 fixed | ✅ | sweep table below (the routing loop was a NEW P0 found later by live testing) |
-| D8 | README/onboarding match shipped NE reality | ✅ | NE-first copy across README, onboarding, doctor, launch-note (+ Codex-unsupported caveat) |
+| D8 | README/onboarding match shipped NE reality | ✅ | NE-first copy across README, onboarding, doctor, launch-note; Codex supported via 426→HTTP |
 | D9 | Final independent review returns no P0/P1 | ⚠️ | static-review rounds were clean, but LIVE testing then found the routing-loop P0 — the lesson being that static review can't catch a kernel-routing loop. Re-run after live VM verification. |
 
 ## Launch-blocker sweep (D7) — original audit items vs current tree

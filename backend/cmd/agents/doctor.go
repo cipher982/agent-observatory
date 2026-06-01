@@ -30,7 +30,7 @@ func runDoctor(args []string) int {
 	}
 	probes := []probe{
 		{"claude", "claude", "Bun/Node + @aws-sdk (Bedrock)", "NE routes provider flows; trust via additive NODE_EXTRA_CA_CERTS (Node ignores the keychain); SigV4 forwarded byte-identical"},
-		{"codex", "codex", "Rust (rustls + native-tls)", "NE routes provider flows; trust via additive CODEX_CA_CERTIFICATE (Codex doesn't use the platform verifier, so the keychain alone is unreliable)"},
+		{"codex", "codex", "Rust (rustls + native-tls)", "WS /responses → proxy replies 426 → Codex falls back to HTTP (fully captured); trust via additive CODEX_CA_CERTIFICATE"},
 		{"antigravity", "antigravity", "Node (opaque .pb transcripts)", "NE routes provider flows; trust via NODE_EXTRA_CA_CERTS (untested)"},
 	}
 

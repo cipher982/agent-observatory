@@ -406,6 +406,59 @@ func TestWebSocketUpgradeReplies426(t *testing.T) {
 	}
 }
 
+// TestWebSocketRealtimeNot426 guards the footgun: a provider WebSocket with NO
+// HTTP fallback (e.g. OpenAI Realtime /v1/realtime) must NOT be 426'd — that
+// would break it. We assert the proxy does NOT reply 426 (it transparently
+// relays instead; here the upstream dial fails so we get 502, but crucially not
+// 426). The point is purely: /responses → 426, everything else → not 426.
+func TestWebSocketRealtimeNot426(t *testing.T) {
+	if wsHasHTTPFallback("/v1/realtime") {
+		t.Fatal("/v1/realtime must NOT be treated as having an HTTP fallback")
+	}
+	if !wsHasHTTPFallback("/v1/responses") {
+		t.Fatal("/v1/responses must be treated as having an HTTP fallback")
+	}
+
+	tmp := t.TempDir()
+	srv, err := NewServer(tmp, log.New(io.Discard, "", 0), time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetInspectHost(func(string) bool { return true })
+	proxyAddr, err := srv.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	raw, err := net.Dial("tcp", proxyAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	const host = "api.openai.com"
+	fmt.Fprintf(raw, "CONNECT %s:443 HTTP/1.1\r\nHost: %s:443\r\n\r\n", host, host)
+	connBR := bufio.NewReader(raw)
+	if r, err := http.ReadResponse(connBR, &http.Request{Method: "CONNECT"}); err != nil || r.StatusCode != 200 {
+		t.Fatalf("CONNECT failed: %v / %v", err, r)
+	}
+	caPEM, _ := os.ReadFile(srv.CAPath())
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(caPEM)
+	tlsConn := tls.Client(raw, &tls.Config{ServerName: host, RootCAs: roots})
+	if err := tlsConn.Handshake(); err != nil {
+		t.Fatalf("client tls handshake: %v", err)
+	}
+	fmt.Fprintf(tlsConn, "GET /v1/realtime HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n", host)
+	resp, err := http.ReadResponse(bufio.NewReader(tlsConn), &http.Request{Method: "GET"})
+	if err != nil {
+		return // a relay/dial failure (no real upstream) is acceptable; the point is below
+	}
+	if resp.StatusCode == http.StatusUpgradeRequired {
+		t.Fatalf("/v1/realtime got 426 — that breaks a no-fallback WS; must be relayed instead")
+	}
+}
+
 func testResolution(t *testing.T, dir, instructionText string) resolver.Resolution {
 	t.Helper()
 	p := filepath.Join(dir, "AGENTS.md")

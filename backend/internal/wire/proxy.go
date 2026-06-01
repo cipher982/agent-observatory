@@ -181,11 +181,14 @@ func (p *Proxy) pump(host, port string, client *tls.Conn) {
 			return
 		}
 
-		// WebSocket upgrade (RFC 6455): we can't usefully parse WS frames and a
-		// proxied 101 is rejected by strict clients. Reply 426 so the agent falls
-		// back to its HTTP endpoint, which we fully capture. See relayWebSocket.
+		// WebSocket upgrade (RFC 6455). We can't usefully parse WS frames and a
+		// proxied 101 is rejected by strict clients, so for endpoints we KNOW fall
+		// back to a capturable HTTP route (Codex's /responses) we reply 426 to push
+		// the client onto HTTP. For ANY OTHER provider WebSocket (e.g. OpenAI's
+		// Realtime /v1/realtime, which has NO HTTP fallback) we must NOT 426 — that
+		// would break it — so we transparently relay it instead. See relayWebSocket.
 		if isWebSocketUpgrade(req) {
-			p.relayWebSocket(host, req, client)
+			p.relayWebSocket(host, port, req, br, client)
 			return
 		}
 
@@ -256,41 +259,103 @@ func tokenListContains(header, tok string) bool {
 	return false
 }
 
-// relayWebSocket handles a WebSocket flow on an inspected (TLS-terminated) host
-// by asking the client to use HTTP instead — by replying 426 Upgrade Required.
+// relayWebSocket handles a WebSocket flow on an inspected (TLS-terminated) host.
 //
-// Why not tunnel the WS? An opaque byte-tunnel of the post-101 frames keeps the
-// agent alive but yields ZERO payload visibility (frames are masked +
-// permessage-deflate compressed), and worse, real clients validate the upgrade
-// handshake: Codex's tungstenite rejects a proxied 101 as "Attack attempt
-// detected". The agents we care about (Codex's `wss://…/responses`) ALL fall
-// back to their HTTP endpoint on a 426 — which we fully TLS-terminate and parse
-// (system prompt + tools). So 426 turns an unparseable/fragile WS into a
-// fully-captured HTTP request. Verified against codex rust-v0.134.0:
-// client.rs:1402-1405 maps a 426 on the WS connect straight to FallbackToHttp
-// (no retry delay), and the subsequent /v1/responses HTTP request is captured in
-// full.
-func (p *Proxy) relayWebSocket(host string, req *http.Request, client net.Conn) {
-	p.logger.Printf("[wire] %s %s -> websocket upgrade; replying 426 so the client uses its capturable HTTP path", host, req.URL.Path)
-	// Minimal, well-formed 426 with Upgrade hints. Connection: close so the client
-	// doesn't try to reuse this leg for the HTTP fallback.
-	_, _ = io.WriteString(client,
-		"HTTP/1.1 426 Upgrade Required\r\n"+
-			"Connection: close\r\n"+
-			"Content-Length: 0\r\n"+
-			"\r\n")
+// For endpoints we KNOW fall back to a capturable HTTP route (Codex's
+// `/responses`), we reply 426 Upgrade Required: codex maps that straight to a
+// (session-scoped, no-retry) HTTP fallback — verified against codex
+// rust-v0.134.0 client.rs:1402-1405 — and we then fully TLS-terminate and parse
+// the resulting /responses request (system prompt + tools). A 426 turns an
+// unparseable, strict-client-rejected WS (tungstenite calls a proxied 101 an
+// "Attack attempt") into a fully-captured HTTP request.
+//
+// For any OTHER provider WebSocket (e.g. OpenAI Realtime /v1/realtime, which has
+// NO HTTP fallback) a 426 would break it, so we transparently relay it instead
+// (pass-through, no capture). Better to miss a capture than break the user's app.
+func (p *Proxy) relayWebSocket(host, port string, req *http.Request, br *bufio.Reader, client net.Conn) {
+	if wsHasHTTPFallback(req.URL.Path) {
+		p.logger.Printf("[wire] %s %s -> websocket upgrade; replying 426 so the client uses its capturable HTTP path", host, req.URL.Path)
+		// Minimal, well-formed 426. Connection: close so the client doesn't try to
+		// reuse this leg for the HTTP fallback.
+		_, _ = io.WriteString(client,
+			"HTTP/1.1 426 Upgrade Required\r\n"+
+				"Connection: close\r\n"+
+				"Content-Length: 0\r\n"+
+				"\r\n")
+		return
+	}
+	// No known HTTP fallback for this WS endpoint (e.g. OpenAI Realtime): a 426
+	// would just break it. Transparently relay the upgrade to the real upstream so
+	// the client keeps working. We don't parse the (masked/compressed) frames, so
+	// this is pass-through only — no capture — but it never breaks the flow.
+	p.logger.Printf("[wire] %s %s -> websocket upgrade with no HTTP fallback; relaying transparently (no capture)", host, req.URL.Path)
+	p.tunnelWebSocket(host, port, req, br, client)
 }
 
-// forward replays the request to the real upstream without touching any signed
-// material: the method, path, query, every header, and the body are forwarded
-// unchanged (we only re-point the URL/Host to dial the real upstream, which the
-// agent already set to the same value). So SigV4 — which signs the canonical
-// request including headers and a body hash — still validates upstream; we never
-// re-sign and hold no AWS credentials.
-//
-// The returned response body is still attached to the live upstream connection,
-// so the caller can stream it straight back to the agent. The caller MUST close
-// the returned net.Conn once the response has been relayed.
+// wsHasHTTPFallback reports whether a provider WebSocket path is known to fall
+// back to a capturable HTTP endpoint when refused with 426. Conservative: only
+// the paths we've verified (Codex's Responses WS). Everything else is relayed
+// transparently rather than risk breaking a WS with no fallback.
+func wsHasHTTPFallback(path string) bool {
+	return strings.Contains(path, "/responses")
+}
+
+// tunnelWebSocket replays the WS handshake to the real upstream and, on 101,
+// relays the upgraded connection as an opaque bidirectional byte tunnel. It
+// drains the buffered reader on each side first so no early frames are dropped.
+func (p *Proxy) tunnelWebSocket(host, port string, req *http.Request, br *bufio.Reader, client net.Conn) {
+	dialer := &net.Dialer{Timeout: 15 * time.Second}
+	rawConn, err := dialer.Dial("tcp", net.JoinHostPort(host, port))
+	if err != nil {
+		writeBadGateway(client)
+		return
+	}
+	upTLS := p.upstreamTLS.Clone()
+	upTLS.ServerName = host
+	if len(upTLS.NextProtos) == 0 {
+		upTLS.NextProtos = []string{"http/1.1"} // RFC 6455 upgrade is HTTP/1.1
+	}
+	up := tls.Client(rawConn, upTLS)
+	if err := up.Handshake(); err != nil {
+		rawConn.Close()
+		writeBadGateway(client)
+		return
+	}
+	defer up.Close()
+
+	outReq := req.Clone(req.Context())
+	outReq.URL.Scheme = "https"
+	outReq.URL.Host = host
+	outReq.Host = host
+	outReq.RequestURI = ""
+	if err := outReq.Write(up); err != nil {
+		writeBadGateway(client)
+		return
+	}
+	upBR := bufio.NewReader(up)
+	resp, err := http.ReadResponse(upBR, outReq)
+	if err != nil {
+		writeBadGateway(client)
+		return
+	}
+	if err := resp.Write(client); err != nil {
+		resp.Body.Close()
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		return // upstream didn't upgrade; the client has its real response
+	}
+	// Opaque bidirectional tunnel; drain buffered bytes (br/upBR) before raw copy.
+	var once sync.Once
+	shutdown := func() { once.Do(func() { client.Close(); up.Close() }) }
+	done := make(chan struct{}, 1)
+	go func() { _, _ = io.Copy(up, br); shutdown(); done <- struct{}{} }()
+	_, _ = io.Copy(client, upBR)
+	shutdown()
+	<-done
+}
+
 // forwardStream replays the request to the real upstream without touching any
 // signed material: the method, path, query, every header, and the body are
 // forwarded unchanged (we only re-point the URL/Host to dial the real upstream,

@@ -206,10 +206,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
         func step() {
             conn.receive(minimumIncompleteLength: 1, maximumLength: 1024) { data, _, isComplete, err in
                 if let data, !data.isEmpty { header.append(data) }
-                if let terminator = header.range(of: Data("\r\n\r\n".utf8)) {
+                if header.range(of: Data("\r\n\r\n".utf8)) != nil {
                     // status is "HTTP/1.1 2xx ..."; byte index 9 is the first status digit.
                     let ok = header.count > 9 && header[header.startIndex.advanced(by: 9)] == UInt8(ascii: "2")
-                    _ = terminator
                     done(ok)
                     return
                 }
