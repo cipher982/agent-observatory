@@ -30,13 +30,18 @@
    `api.anthropic.com/v1/messages` → **HTTP 405** — NOT 502. The forward reaches
    the real provider; no loop.
 
-2. **Codex WebSocket transport (P1, Codex-specific).** Codex's primary transport
-   is `wss://api.openai.com/v1/responses`. Our proxy now relays the WS upgrade
-   (RFC 6455, tunneled, metadata-only capture), BUT Codex's rustls WS connector
-   rejects our CA (`tls: bad certificate`) — it does **not** honor
-   `CODEX_CA_CERTIFICATE` on the WS path (only its HTTP path does). So enabling
-   capture currently breaks Codex. Honest position: **Codex is unsupported in
-   v0.1** until/unless its WS trust is solved; document it, don't claim it.
+2. **Codex WebSocket transport — SOLVED.** Codex's primary transport is
+   `wss://api.openai.com/v1/responses`, which we can't usefully parse and which
+   strict WS clients reject when proxied. Source dive (codex rust-v0.134.0
+   `core/src/client.rs:1402-1405`) found that a **426 Upgrade Required** on the WS
+   connect maps straight to `FallbackToHttp` with no retry delay — and the
+   resulting `/v1/responses` HTTP request is one we fully TLS-terminate and parse.
+   So the proxy now replies **426** to provider WS upgrades. Verified against a
+   real Codex (isolated via HTTPS_PROXY): one 426 → completed (~7s) →
+   **full capture: system 43000 chars, 22 tools**. The earlier
+   "Codex ignores our CA / unsupported" conclusion was a symptom of the broken
+   extension state (routing loop + the CA not reaching Codex), NOT a real verdict.
+   **Codex is supported.**
 
 ### What IS solid (unchanged by the above)
 
@@ -96,7 +101,7 @@ curl --cacert ~/.local/state/agent-observatory/ca/observatory-ca.pem \
 | B5 | Fail-open + stability | ✅ | Stopping the daemon reverted providers to real certs (NE fail-open → agents keep working — verified repeatedly). Client CA-reject → `clientTLSFailures` on `/healthz` → app warns. SNI fragmentation tests pass. |
 | C6 | Uninstall fully reverses | 🟡 mostly | `agents uninstall`: daemon gone, **0** trusted CAs (hash sweep verified 2→0), state dir/env/plist gone, all hosts back on real certs. Gap: the CLI can't deactivate the system extension (it fails open without the daemon; a menu-bar **Disable Live Capture** kill switch now deactivates it from the app). |
 | — | Routing loop fixed | ✅ verified live | `handleNewFlow` bypasses the daemon's own upstream flows; proven on-host via dev-scoped harness (real 401/405, no loop). |
-| — | Codex (WebSocket) capture | ❌ unsupported v0.1 | Codex's wss path rejects our CA; document as unsupported, don't claim it. |
+| — | Codex (WebSocket) capture | ✅ via 426→HTTP fallback | Proxy replies 426 to provider WS upgrades; Codex falls back to HTTP instantly and is fully captured (43k sys chars, 22 tools). Verified via explicit-proxy isolation; NE-path verification pending (shared Go code). |
 | — | Safe on-host iteration | ✅ | dev-scope allowlist (`/tmp/agent-observatory-dev-scope`) + signed `devharness` + menu kill switch; lets us test the real kernel path without a VM or risking host agents. See `docs/scoped-capture-dev.md`. |
 | D7 | Launch-blocker sweep: every original-audit P0/P1 fixed | ✅ | sweep table below (the routing loop was a NEW P0 found later by live testing) |
 | D8 | README/onboarding match shipped NE reality | ✅ | NE-first copy across README, onboarding, doctor, launch-note (+ Codex-unsupported caveat) |
