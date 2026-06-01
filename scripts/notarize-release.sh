@@ -32,6 +32,14 @@ test -d "$APP_PATH" || fail "missing $APP_PATH (run make release first)"
 test -x "$HELPER_PATH" || fail "missing executable bundled helper at $HELPER_PATH"
 codesign --verify --deep --strict "$APP_PATH" || fail "app codesign verification failed"
 
+if [ -z "${DMG_CODESIGN_IDENTITY:-}" ]; then
+  DMG_CODESIGN_IDENTITY="$(
+    codesign -dv --verbose=4 "$APP_PATH" 2>&1 |
+      awk -F= '/^Authority=Developer ID Application:/ { print $2; exit }'
+  )"
+fi
+test -n "${DMG_CODESIGN_IDENTITY:-}" || fail "could not infer Developer ID identity for DMG signing"
+
 tmp="$(mktemp -d)"
 cleanup() {
   rm -rf "$tmp"
@@ -51,6 +59,7 @@ rm -f "$ZIP_PATH"
 echo "notarize-release: rebuilding $DMG_STYLE DMG with stapled app"
 DMG_STYLE="$DMG_STYLE" DMG_CODESIGN_IDENTITY="${DMG_CODESIGN_IDENTITY:-}" \
   "$ROOT/scripts/make-dmg.sh" "$APP_PATH" "$DMG_PATH" "Agent Observatory"
+codesign --verify --strict "$DMG_PATH" || fail "DMG codesign verification failed"
 
 echo "notarize-release: submitting DMG"
 xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
