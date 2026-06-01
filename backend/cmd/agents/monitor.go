@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cipher982/agent-observatory/backend/internal/fact"
 	"github.com/cipher982/agent-observatory/backend/internal/observatory"
+	"github.com/cipher982/agent-observatory/backend/internal/resolver"
 	"github.com/cipher982/agent-observatory/backend/internal/wire"
 )
 
@@ -58,6 +60,19 @@ func runMonitor(args []string) int {
 
 	// Live in-memory ring of recent captures for the stream's initial replay.
 	live := newLiveBus(srv)
+
+	// Back the VERIFIED tier in session detail with THIS daemon's live captures.
+	// The daemon holds full captures (assembled text + tool names) in memory, so
+	// it can produce instruction-match facts the disk-persisted path can't.
+	// Correlation is coarse: all of a runtime's captures attribute to the queried
+	// session (same v2 behavior as the persisted path) — refine per-request later.
+	if !demo {
+		observatory.WireObservations = func(runtime, sessionID string, res resolver.Resolution) []fact.Observation {
+			// Only attribute captures whose upstream host maps to this runtime, so
+			// a Codex capture never shows up under a Claude session (and vice versa).
+			return srv.ObservationsForRuntime(runtime, sessionID, res, runtimeForHost)
+		}
+	}
 
 	if demo {
 		go runDemoInjector(srv)

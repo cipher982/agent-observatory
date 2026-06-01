@@ -320,6 +320,40 @@ func TestStreamingResponseIsNotBuffered(t *testing.T) {
 	}
 }
 
+// TestDefaultInspectHostContract pins the provider allowlist. It MUST stay in
+// sync with the Swift Allowlist (app/TransparentProxyExtension/Allowlist.swift)
+// and its mirror test (app/ObservatoryTests/SNITests.swift:testAllowlistMatching),
+// or the kernel would divert flows the Go side won't inspect (or vice versa).
+func TestDefaultInspectHostContract(t *testing.T) {
+	allow := []string{
+		"api.anthropic.com",
+		"api.openai.com",
+		"bedrock-runtime.us-east-1.amazonaws.com",
+		"aws-external-anthropic.us-east-1.api.aws",
+		"API.ANTHROPIC.COM", // case-insensitive
+		"api.anthropic.com.", // trailing dot
+	}
+	deny := []string{
+		"example.com",
+		"evil-amazonaws.com",
+		"amazonaws.com.attacker.com",
+		"s3.amazonaws.com",                  // AWS but not bedrock
+		"aws-external-anthropic.evil.com",   // right prefix, wrong suffix
+		"notanthropic.com",
+		"api.openai.com.evil.com", // not exact
+	}
+	for _, h := range allow {
+		if !defaultInspectHost(h) {
+			t.Errorf("defaultInspectHost(%q) = false, want true", h)
+		}
+	}
+	for _, h := range deny {
+		if defaultInspectHost(h) {
+			t.Errorf("defaultInspectHost(%q) = true, want false", h)
+		}
+	}
+}
+
 func testResolution(t *testing.T, dir, instructionText string) resolver.Resolution {
 	t.Helper()
 	p := filepath.Join(dir, "AGENTS.md")

@@ -9,7 +9,7 @@ import Foundation
 // won't actually inspect. Mirror of that switch:
 //   h == "api.openai.com" || h == "api.anthropic.com"
 //   || (contains "bedrock-runtime." && hasSuffix ".amazonaws.com")
-//   || hasPrefix "aws-external-anthropic."
+//   || (hasPrefix "aws-external-anthropic." && hasSuffix ".api.aws")
 struct Allowlist {
     static let providers = Allowlist()
 
@@ -17,7 +17,7 @@ struct Allowlist {
         let h = host.lowercased().trimmingTrailingDot()
         if h == "api.openai.com" || h == "api.anthropic.com" { return true }
         if h.contains("bedrock-runtime.") && h.hasSuffix(".amazonaws.com") { return true }
-        if h.hasPrefix("aws-external-anthropic.") { return true }
+        if h.hasPrefix("aws-external-anthropic.") && h.hasSuffix(".api.aws") { return true }
         return false
     }
 }

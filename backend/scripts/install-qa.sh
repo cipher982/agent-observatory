@@ -39,7 +39,11 @@ for i in $(seq 1 "$ITER"); do
   HOME="$FAKE_HOME" PATH="$STUBDIR:$PATH" "$BIN" status >/dev/null || { echo "iter $i: status not installed"; exit 1; }
   grep -q "agent-observatory" "$FAKE_HOME/.zshenv" || { echo "iter $i: no managed block"; exit 1; }
   test -f "$FAKE_HOME/Library/LaunchAgents/com.github.cipher982.agentobservatory.plist" || { echo "iter $i: no plist"; exit 1; }
-  grep -q "launchctl setenv HTTPS_PROXY" "$OBS_LAUNCHCTL_LOG" || { echo "iter $i: setenv not called"; exit 1; }
+  grep -q "launchctl setenv NODE_EXTRA_CA_CERTS" "$OBS_LAUNCHCTL_LOG" || { echo "iter $i: NODE_EXTRA_CA_CERTS setenv not called"; exit 1; }
+  # Routing is the NE extension's job — the install must NOT set proxy/root-replacing vars.
+  if grep -qE "launchctl setenv (HTTPS_PROXY|HTTP_PROXY|SSL_CERT_FILE|AWS_CA_BUNDLE)" "$OBS_LAUNCHCTL_LOG"; then
+    echo "iter $i: install set a banned env var (proxy/root-replacing) — breaks unrelated traffic"; exit 1
+  fi
 
   # double-install (idempotency)
   HOME="$FAKE_HOME" PATH="$STUBDIR:$PATH" "$BIN" install >/dev/null

@@ -165,6 +165,35 @@ func (s *Server) Observations(runtime, sessionID string) []fact.Observation {
 	return s.ObservationsForResolution(runtime, sessionID, resolver.Resolution{})
 }
 
+// ObservationsForRuntime is ObservationsForResolution restricted to captures
+// whose upstream host maps to runtime (via hostRuntime), so captures are never
+// cross-attributed across runtimes (e.g. a Codex/OpenAI capture under a Claude
+// session). hostRuntime maps an upstream host to a runtime label.
+func (s *Server) ObservationsForRuntime(runtime, sessionID string, res resolver.Resolution, hostRuntime func(host string) string) []fact.Observation {
+	all := s.ObservationsForResolution(runtime, sessionID, res)
+	if hostRuntime == nil {
+		return all
+	}
+	s.mu.Lock()
+	caps := make([]Capture, len(s.captures))
+	copy(caps, s.captures)
+	s.mu.Unlock()
+	// Build the set of request ids (wire-<i>) that belong to this runtime.
+	keep := map[string]bool{}
+	for i, c := range caps {
+		if hostRuntime(c.Host) == runtime {
+			keep[fmt.Sprintf("wire-%d", i)] = true
+		}
+	}
+	out := all[:0]
+	for _, o := range all {
+		if keep[o.Epoch.RequestID] {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
 // ObservationsForResolution converts captured wire requests into VERIFIED
 // fact.Observations for the given runtime/session/resolved context. The wire is
 // a COMPLETE-coverage source for instruction text when the request body was

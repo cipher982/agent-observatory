@@ -132,14 +132,23 @@ final class EngineClient {
         Task { [weak self] in await self?.checkInstallStatus() }
     }
 
+    // Monotonic token so overlapping restarts can't resume out of order. Each
+    // restart bumps it; after the async stop completes, a restart only proceeds
+    // if it's still the latest. (All reads/writes are on the main actor.)
+    private var restartGeneration = 0
+
     // Switch modes. We stop and WAIT for the old app-owned process to fully exit
     // (releasing its port) before relaunching, so a fast Demo↔Live toggle can't
     // race the port. Runs async because waitUntilExit() must not block the main
     // actor.
     func restart(mode newMode: ObservatoryMode) {
+        restartGeneration += 1
+        let generation = restartGeneration
         Task { [weak self] in
             guard let self else { return }
             await self.stopAndWait()
+            // A newer restart superseded us while we waited — let it win.
+            guard generation == self.restartGeneration else { return }
             self.mode = newMode
             self.state = .starting
             self.sessions = []

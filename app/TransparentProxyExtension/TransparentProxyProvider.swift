@@ -92,27 +92,58 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
             using: .tcp
         )
         conn.start(queue: .global())
+
+        // The CONNECT handshake must complete promptly; if the proxy accepts TCP
+        // but stalls, we fall back to a direct relay rather than hang the agent.
+        // The handshake completion and the timeout fire on different queues, so a
+        // lock makes "claim the outcome" atomic — we take exactly ONE path
+        // (proxy, direct-fallback) and never send the agent's bytes twice.
+        let outcome = Outcome()
+        func failOpen(_ why: String) {
+            guard outcome.claim() else { return }
+            log.error("go proxy \(why, privacy: .public) for \(host, privacy: .public); relaying direct")
+            conn.cancel()
+            self.relayDirect(flow, firstBytes: firstBytes, remote: remote)
+        }
+        let timeout = DispatchWorkItem { failOpen("CONNECT timed out") }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: timeout)
+
         let connectReq = "CONNECT \(host):443 HTTP/1.1\r\nHost: \(host):443\r\n\r\n"
         conn.send(content: Data(connectReq.utf8), completion: .contentProcessed { [weak self] sendErr in
             guard let self else { return }
-            if sendErr != nil {
-                log.error("go proxy unreachable for \(host, privacy: .public); relaying direct")
-                conn.cancel()
-                self.relayDirect(flow, firstBytes: firstBytes, remote: remote)
-                return
-            }
+            if sendErr != nil { failOpen("unreachable"); return }
             self.readConnectResponse(conn) { ok in
-                guard ok else {
-                    log.error("go proxy CONNECT rejected for \(host, privacy: .public); relaying direct")
-                    conn.cancel()
-                    self.relayDirect(flow, firstBytes: firstBytes, remote: remote)
-                    return
-                }
-                conn.send(content: firstBytes, completion: .contentProcessed { _ in
+                guard ok else { failOpen("CONNECT rejected"); return }
+                timeout.cancel()
+                // Commit to the proxy. If we lost the race to the timeout, it has
+                // already started a direct relay — bail.
+                guard outcome.claim() else { return }
+                conn.send(content: firstBytes, completion: .contentProcessed { e in
+                    if e != nil {
+                        // Proxy died after 200 but before our bytes reached an
+                        // upstream, so no TLS handshake started — safe to retry direct.
+                        log.error("go proxy dropped after CONNECT for \(host, privacy: .public); relaying direct")
+                        conn.cancel()
+                        self.relayDirect(flow, firstBytes: firstBytes, remote: remote)
+                        return
+                    }
                     self.pump(flow: flow, conn: conn)
                 })
             }
         })
+    }
+
+    // Outcome is a one-shot, thread-safe latch: the first claim() wins and all
+    // later claims return false. Used to pick a single relay path under races.
+    private final class Outcome {
+        private let lock = NSLock()
+        private var claimed = false
+        func claim() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            if claimed { return false }
+            claimed = true
+            return true
+        }
     }
 
     // Not allowlisted (or SNI unreadable): relay straight to the real upstream so

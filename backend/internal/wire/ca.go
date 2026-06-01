@@ -157,13 +157,16 @@ func LoadOrCreateCA(dir string, notBefore time.Time) (*CA, error) {
 	return &CA{cert: cert, key: key, certPEM: certPEM, pemPath: pemPath, cache: map[string]*tls.Certificate{}}, nil
 }
 
-// usableAt reports whether the CA is a valid signing root at t — it must be a
-// CA cert and t must fall well inside its validity window. We require a 30-day
-// margin before expiry so a long session can't outlive the leaves it mints.
+// usableAt reports whether the CA is a valid signing root at t: a CA cert whose
+// validity window currently covers t. We only regenerate when the CA is already
+// unusable (expired / not-yet-valid / not a CA) — in that state trust is broken
+// anyway, so minting a fresh CA is strictly better. We deliberately do NOT
+// regenerate a still-valid CA early: that would silently invalidate the existing
+// login-keychain trust without re-running `agents trust install`.
 func (c *CA) usableAt(t time.Time) bool {
 	return c.cert != nil && c.cert.IsCA &&
 		!t.Before(c.cert.NotBefore) &&
-		t.Add(30*24*time.Hour).Before(c.cert.NotAfter)
+		t.Before(c.cert.NotAfter)
 }
 
 func parseCA(certPEM, keyPEM []byte, pemPath string) (*CA, bool) {

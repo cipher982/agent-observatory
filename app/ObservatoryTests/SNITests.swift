@@ -58,7 +58,7 @@ final class SNITests: XCTestCase {
         XCTAssertTrue(a.contains("api.anthropic.com"))
         XCTAssertTrue(a.contains("api.openai.com"))
         XCTAssertTrue(a.contains("bedrock-runtime.us-east-1.amazonaws.com"))
-        XCTAssertTrue(a.contains("aws-external-anthropic.us-east-1.amazonaws.com"))
+        XCTAssertTrue(a.contains("aws-external-anthropic.us-east-1.api.aws"))
         XCTAssertTrue(a.contains("API.ANTHROPIC.COM"))            // case-insensitive
         XCTAssertTrue(a.contains("api.anthropic.com."))           // trailing dot
         // Denied — these must NOT be diverted.
@@ -66,6 +66,7 @@ final class SNITests: XCTestCase {
         XCTAssertFalse(a.contains("evil-amazonaws.com"))          // lookalike
         XCTAssertFalse(a.contains("amazonaws.com.attacker.com"))  // suffix-spoof
         XCTAssertFalse(a.contains("s3.amazonaws.com"))            // AWS but NOT bedrock
+        XCTAssertFalse(a.contains("aws-external-anthropic.evil.com")) // right prefix, wrong suffix
         XCTAssertFalse(a.contains("notanthropic.com"))
         XCTAssertFalse(a.contains("api.openai.com.evil.com"))     // not exact
     }

@@ -195,9 +195,12 @@ func (p *Proxy) pump(host, port string, client *tls.Conn) {
 	}
 }
 
-// forward sends the request to the real upstream BYTE-IDENTICAL: same method,
-// path, query, headers, and body. This preserves SigV4 (and any other signed
-// material) so Bedrock accepts the original signature without re-signing.
+// forward replays the request to the real upstream without touching any signed
+// material: the method, path, query, every header, and the body are forwarded
+// unchanged (we only re-point the URL/Host to dial the real upstream, which the
+// agent already set to the same value). So SigV4 — which signs the canonical
+// request including headers and a body hash — still validates upstream; we never
+// re-sign and hold no AWS credentials.
 //
 // The returned response body is still attached to the live upstream connection,
 // so the caller can stream it straight back to the agent. The caller MUST close
@@ -255,7 +258,7 @@ func defaultInspectHost(host string) bool {
 		return true
 	case strings.Contains(h, "bedrock-runtime.") && strings.HasSuffix(h, ".amazonaws.com"):
 		return true
-	case strings.HasPrefix(h, "aws-external-anthropic."):
+	case strings.HasPrefix(h, "aws-external-anthropic.") && strings.HasSuffix(h, ".api.aws"):
 		return true
 	default:
 		return false
