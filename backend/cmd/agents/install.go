@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/cipher982/agent-observatory/backend/internal/install"
 )
@@ -77,9 +78,27 @@ func runUninstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "uninstall completed with issues: %v\n", err)
 		return 1
 	}
-	fmt.Println("Agent Observatory uninstalled. System state restored.")
+	fmt.Println("Agent Observatory uninstalled: daemon, local CA, keychain trust, and Node trust removed.")
 	fmt.Println("Open a new terminal for the env changes to clear.")
+	// The system extension can only be deactivated by the app that hosts it (a CLI
+	// can't), so tell the user how to finish removing it.
+	if extensionStillActive() {
+		fmt.Println()
+		fmt.Println("Note: the capture system extension is still active. To remove it, either")
+		fmt.Println("disable live capture in Agent Observatory, or turn it off under System")
+		fmt.Println("Settings → General → Login Items & Extensions → Network Extensions.")
+	}
 	return 0
+}
+
+// extensionStillActive reports whether the transparent-proxy system extension is
+// still registered (best-effort; empty/error => assume not).
+func extensionStillActive() bool {
+	out, err := exec.Command("systemextensionsctl", "list").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "agentobservatory")
 }
 
 func runStatus(args []string) int {
