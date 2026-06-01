@@ -34,8 +34,6 @@ targets:
         com.apple.developer.system-extension.install: true
         com.apple.developer.networking.networkextension:
           - app-proxy-provider-systemextension
-        com.apple.security.application-groups:
-          - group.com.github.cipher982.agentobservatory
     info:
       path: Observatory/Info.plist
       properties:
@@ -93,8 +91,9 @@ targets:
       properties:
         com.apple.developer.networking.networkextension:
           - app-proxy-provider-systemextension
-        com.apple.security.application-groups:
-          - group.com.github.cipher982.agentobservatory
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
     info:
       path: TransparentProxyExtension/Info.plist
       properties:
@@ -111,14 +110,23 @@ targets:
         NetworkExtension:
           NEProviderClasses:
             com.apple.networkextension.app-proxy: $(PRODUCT_MODULE_NAME).TransparentProxyProvider
+          NEMachServiceName: $(TeamIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)
+        NSSystemExtensionUsageDescription: Agent Observatory uses this system extension to capture local agent HTTPS traffic for inspection.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension
+        # SystemExtensions.framework matches the nested wrapper by identifier.
+        # Keep the Swift module/executable short, but name the .systemextension
+        # product after the bundle id so activation can find it in /Applications.
+        PRODUCT_NAME: com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension
+        EXECUTABLE_NAME: TransparentProxyExtension
+        PRODUCT_MODULE_NAME: TransparentProxyExtension
         DEVELOPMENT_TEAM: M49WM6JSW8
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "Developer ID Application"
         PROVISIONING_PROFILE_SPECIFIER: "Agent Observatory Ext DevID"
         ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: YES
         SWIFT_VERSION: "5.0"
 
   ObservatoryTests:

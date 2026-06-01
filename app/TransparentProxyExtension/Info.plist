@@ -24,11 +24,15 @@
 	<string>26.0</string>
 	<key>NetworkExtension</key>
 	<dict>
+		<key>NEMachServiceName</key>
+		<string>$(TeamIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 		<key>NEProviderClasses</key>
 		<dict>
 			<key>com.apple.networkextension.app-proxy</key>
 			<string>$(PRODUCT_MODULE_NAME).TransparentProxyProvider</string>
 		</dict>
 	</dict>
+	<key>NSSystemExtensionUsageDescription</key>
+	<string>Agent Observatory uses this system extension to capture local agent HTTPS traffic for inspection.</string>
 </dict>
 </plist>
