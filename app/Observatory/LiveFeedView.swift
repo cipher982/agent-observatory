@@ -17,15 +17,20 @@ struct LiveFeedView: View {
                         ForEach(engine.liveEvents) { ev in
                             LiveRequestCard(event: ev)
                                 .glassEffectID(ev.id, in: glassNS)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                                .transition(.opacity.combined(with: .scale(scale: 0.97)))
                         }
                     }
                 }
                 .padding(24)
+                // Animate the content, not the scroll container — animating the
+                // ScrollView itself thrashed its offset on every prepend.
+                .animation(.spring(response: 0.45, dampingFraction: 0.85), value: engine.liveEvents.count)
             }
         }
+        // Newest events prepend at index 0; pin the viewport to the top so the
+        // scroll offset stays consistent instead of rubber-banding above content.
+        .defaultScrollAnchor(.top)
         .glassEffectTransition(.materialize)
-        .animation(.spring(response: 0.45, dampingFraction: 0.85), value: engine.liveEvents.count)
         .scrollEdgeEffectStyle(.soft, for: .top)
         .safeAreaBar(edge: .top) { feedHeader }
     }
