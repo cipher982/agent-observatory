@@ -12,6 +12,11 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_HARDENED_RUNTIME: YES
+    # Notarization requires a secure timestamp and forbids the debug-only
+    # get-task-allow entitlement. xcodebuild's non-archive default omits the
+    # timestamp and injects get-task-allow, so force both here for every target.
+    OTHER_CODE_SIGN_FLAGS: "--timestamp"
+    CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
     # Sandbox OFF for v1: the app spawns a helper process and talks to localhost.
     # Tighten later with a proper XPC/helper entitlement if App Store distribution
     # is ever wanted.
