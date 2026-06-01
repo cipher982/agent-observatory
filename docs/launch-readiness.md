@@ -7,40 +7,94 @@
 
 ## Verdict
 
-**GO — with the honest caveats below called out, not buried.**
+**NO-GO until the live capture path is re-verified in isolation. Do not post yet.**
 
-Every falsifiable criterion (A1–C6) is proven live on this Mac, and the
-launch-blocker sweep (D7–D9) is clean. The product does what it claims: it
-captures real agent→provider traffic with correct facts, leaves unrelated
-traffic untouched, fails open safely, and uninstalls cleanly. Four codex review
-rounds (two architecture, two hands-on debugging + a web-researched 0→1) are
-addressed; the full backend suite (build + vet + race + install-lifecycle) and
-macOS app tests are green.
+> Correction (2026-06-01): an earlier draft of this doc said GO. That was WRONG.
+> It declared B3 "proven" because a capture event appeared in the live feed —
+> but the agent's request never actually reached the provider. Live testing with
+> a REAL agent (Codex) exposed two defects a curl-with-CA test had masked. The
+> capture/parse/UI work is genuinely solid; the *forwarding* path was broken.
 
-The caveats a poster must own (all documented in the README's Known Limitations):
-- Capture requires a per-runtime CA hint for the runtimes that ignore the macOS
-  keychain — Node/Claude Code (`NODE_EXTRA_CA_CERTS`) and Codex
-  (`CODEX_CA_CERTIFICATE`); only the AWS Go SDK (Bedrock) needs nothing. An
-  **already-running** agent fails provider TLS until restarted; the app now warns
-  on this instead of failing silently.
-- HTTP/3/QUIC isn't captured; ECH fails open; inspected hosts are proxied over
-  HTTP/1.1.
-- `agents uninstall` (CLI) can't deactivate the system extension; it says so and
-  points to the app / System Settings.
+### The two defects found by real-agent testing
+
+1. **Routing loop (P0, affected ALL capture).** The Go proxy terminates TLS, then
+   dials the real provider:443 to forward — but that dial is itself a provider
+   :443 flow, so the NE extension **re-intercepts the proxy's own upstream** and
+   loops it back. Forward never reached the provider; the agent got 502. A
+   capture event still appeared, which is exactly why the earlier "GO" was wrong.
+   **Fixed in code** (`handleNewFlow` bypasses flows whose
+   `sourceAppSigningIdentifier` is our daemon; helper signed with a stable id) —
+   **but NOT yet verified live**, because loading the fixed extension safely
+   needs an isolated environment (see runbook).
+
+2. **Codex WebSocket transport (P1, Codex-specific).** Codex's primary transport
+   is `wss://api.openai.com/v1/responses`. Our proxy now relays the WS upgrade
+   (RFC 6455, tunneled, metadata-only capture), BUT Codex's rustls WS connector
+   rejects our CA (`tls: bad certificate`) — it does **not** honor
+   `CODEX_CA_CERTIFICATE` on the WS path (only its HTTP path does). So enabling
+   capture currently breaks Codex. Honest position: **Codex is unsupported in
+   v0.1** until/unless its WS trust is solved; document it, don't claim it.
+
+### What IS solid (unchanged by the above)
+
+- Transcript discovery, context resolver, fact/evidence model, the live-feed UI,
+  notarized Developer-ID signed app + system extension that activates, the
+  TLS-terminating parse (correct host/endpoint/tools/prompt-length on real
+  bodies), unrelated-traffic pass-through, fail-open when the daemon is down, and
+  a now-reliable kill switch (menu-bar Disable + keychain CA sweep on uninstall).
+  Full backend suite + app tests green. Five codex review rounds addressed.
+
+### What must happen before a real GO
+
+- Re-verify in an **isolated macOS VM** (host disk is currently too full): load
+  the loop-fixed extension, prove a CA-trusting client gets a real provider
+  response (HTTP 401, not 502) and the daemon log shows no "unknown authority"
+  loop, then prove a real **Claude Code** (HTTP-path) agent captures AND
+  completes. Scope Codex out honestly.
+
+The caveats a poster must own regardless (in README Known Limitations): per-runtime
+CA hints; already-running agents must restart (app warns); HTTP/3/QUIC not
+captured; ECH fails open; inspected hosts proxied over HTTP/1.1.
+
+## Isolated re-verification runbook (do this before GO)
+
+Host disk was 99% full (~12 GB) — free ~60 GB first, then:
+
+```bash
+# 1. macOS guest VM (NAT networking fully isolates the host network stack)
+tart clone ghcr.io/cirruslabs/macos-sequoia-xcode:latest ao-test   # or a macOS 26 image
+tart run --dir=repo:~/git/agent-observatory ao-test &
+
+# 2. inside the VM: disable SIP (recovery) to skip notarize-every-build, enable dev mode
+#    (tart run --recovery → csrutil disable → reboot)
+sudo systemextensionsctl developer on
+
+# 3. build + install + activate the app in the VM, approve the sysext once (harmless in VM)
+
+# 4. PROVE the loop fix (the test the earlier GO skipped):
+curl --cacert ~/.local/state/agent-observatory/ca/observatory-ca.pem \
+  https://api.openai.com/v1/models        # expect a real 401, NOT 502
+#    daemon log must NOT show: upstream tls handshake: x509: unknown authority
+
+# 5. PROVE a real agent: launch Claude Code in the VM, run a prompt,
+#    confirm the capture appears AND the agent completes normally.
+```
 
 ## Status of the falsifiable criteria
 
-| # | Criterion | Status | Evidence |
-|---|-----------|--------|----------|
+| # | Criterion | Status | Evidence / note |
+|---|-----------|--------|----------------|
 | A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ | notarytool Accepted; app + DMG stapled; `spctl -a -vvv` → "accepted / source=Notarized Developer ID" |
-| A2 | In /Applications, sysext `activated enabled` | ✅ | After approval, `systemextensionsctl list` shows `* * M49WM6JSW8 …TransparentProxyExtension (0.1.0/1) [activated enabled]`; provider process running |
-| B3 | Live capture of a real agent with correct host + tool names | ✅ | SSE feed captured `api.openai.com` → `openai/chat.completions` (tool `mcp__launch__verify`) and `api.anthropic.com` → `anthropic/messages` (tools `mcp__launch__verify`,`Bash`) with correct runtime/host/sys-chars. Earlier run screenshot: `docs/screenshots/live-feed.png` |
-| B4 | Unrelated traffic untouched (`example.com` + plain HTTP) | ✅ | While capture active: `example.com:443` served its real **Cloudflare** cert (not Observatory CA), `github.com` HTTP 200, plain `http://example.com` HTTP 200; **0 captures** during unrelated traffic. Contrast: `api.openai.com` presented the **Observatory** CA. |
-| B5 | Fail-open + stability under handshake failure | ✅ | Stopping the daemon reverted `api.openai.com` to its real **Google** cert (NE fail-open, agents keep working). A client rejecting the CA produced `clientTLSFailures` on `/healthz` → app warns instead of breaking silently. SNI fragmentation: `SNITests.testNoCrashOnAnyPrefix`. |
-| C6 | Uninstall fully reverses | ✅ | `agents uninstall`: daemon gone, **0** trusted CAs left in keychain (hash sweep), state dir gone, env block removed, plist gone. Post-uninstall every host (incl. providers) back on real certs, HTTP 200. CLI honestly notes the system extension must be removed via the app/System Settings. |
-| D7 | Launch-blocker sweep: every P0/P1 fixed or deferred w/ rationale | ✅ | sweep table below |
-| D8 | README/onboarding match shipped NE reality | ✅ | NE-first copy across README, onboarding, doctor, launch-note |
-| D9 | Final independent review returns no P0/P1 | ✅ | two codex rounds; no P0, residual items are P2 (below) |
+| A2 | In /Applications, sysext `activated enabled` | ✅ | After approval, `systemextensionsctl list` shows `[activated enabled]`; provider process running |
+| B3 | Live capture of a real agent, captured AND agent completes | ⚠️ partial | Capture/parse PROVEN on real bodies (correct host/endpoint/tools/prompt-len). But the FORWARD path looped (routing-loop P0) so the agent itself got 502 — the request never reached the provider. Loop fix committed, **unverified live**. Re-test in VM. |
+| B4 | Unrelated traffic untouched | ✅ | While active, `example.com:443` kept its real **Cloudflare** cert (not Observatory CA), plain HTTP 200, **0 captures** during unrelated traffic; only `api.openai.com` presented the Observatory CA. |
+| B5 | Fail-open + stability | ✅ | Stopping the daemon reverted providers to real certs (NE fail-open → agents keep working — verified repeatedly). Client CA-reject → `clientTLSFailures` on `/healthz` → app warns. SNI fragmentation tests pass. |
+| C6 | Uninstall fully reverses | 🟡 mostly | `agents uninstall`: daemon gone, **0** trusted CAs (hash sweep verified 2→0), state dir/env/plist gone, all hosts back on real certs. Gap: the CLI can't deactivate the system extension (it fails open without the daemon; a menu-bar **Disable Live Capture** kill switch now deactivates it from the app). |
+| — | Routing loop fixed | ⚠️ code-only | `handleNewFlow` bypasses the daemon's own upstream flows; **needs live VM verification** (the single most important remaining proof). |
+| — | Codex (WebSocket) capture | ❌ unsupported v0.1 | Codex's wss path rejects our CA; document as unsupported, don't claim it. |
+| D7 | Launch-blocker sweep: every original-audit P0/P1 fixed | ✅ | sweep table below (the routing loop was a NEW P0 found later by live testing) |
+| D8 | README/onboarding match shipped NE reality | ✅ | NE-first copy across README, onboarding, doctor, launch-note (+ Codex-unsupported caveat) |
+| D9 | Final independent review returns no P0/P1 | ⚠️ | static-review rounds were clean, but LIVE testing then found the routing-loop P0 — the lesson being that static review can't catch a kernel-routing loop. Re-run after live VM verification. |
 
 ## Launch-blocker sweep (D7) — original audit items vs current tree
 
