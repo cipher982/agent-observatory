@@ -72,14 +72,21 @@ targets:
           # Build a universal-ish arm64 helper for the bundle.
           /usr/local/go/bin/go build -o "$RES/agents" ./cmd/agents 2>/dev/null \
             || go build -o "$RES/agents" ./cmd/agents
-          # go build emits an ad-hoc, linker-signed Mach-O. Notarization requires
-          # every embedded executable to be Developer ID signed with the hardened
-          # runtime + a secure timestamp. Re-sign it here (before Xcode signs the
-          # outer app) for Release builds; Debug/local builds can stay ad-hoc.
+          # go build emits an ad-hoc, linker-signed Mach-O with identifier "a.out".
+          # The NE extension bypasses the proxy's own upstream flows by matching
+          # this STABLE signing identifier (avoids the re-interception loop), so we
+          # MUST sign with an explicit --identifier in every config. Release also
+          # needs Developer ID + hardened runtime + timestamp for notarization;
+          # Debug can ad-hoc sign (--sign -) but keeps the same identifier.
+          HELPER_ID="com.github.cipher982.agentobservatory.agents"
           if [ "$CONFIGURATION" = "Release" ] && [ -n "$EXPANDED_CODE_SIGN_IDENTITY" ]; then
             codesign --force --options runtime --timestamp \
+              --identifier "$HELPER_ID" \
               --sign "$EXPANDED_CODE_SIGN_IDENTITY" "$RES/agents"
-            echo "signed embedded engine with $EXPANDED_CODE_SIGN_IDENTITY_NAME"
+            echo "signed embedded engine ($HELPER_ID) with $EXPANDED_CODE_SIGN_IDENTITY_NAME"
+          else
+            codesign --force --identifier "$HELPER_ID" --sign - "$RES/agents"
+            echo "ad-hoc signed embedded engine ($HELPER_ID) for $CONFIGURATION"
           fi
           echo "embedded engine at $RES/agents"
 

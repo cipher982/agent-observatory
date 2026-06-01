@@ -181,6 +181,17 @@ func (p *Proxy) pump(host, port string, client *tls.Conn) {
 			return
 		}
 
+		// WebSocket upgrade (RFC 6455): the bytes after the 101 are WS frames, not
+		// HTTP, so we must switch to a transparent byte tunnel or we'd break the
+		// agent (Codex's primary transport is wss://…/responses). We relay the
+		// handshake + tunnel the frames; we do NOT yet parse the (masked +
+		// permessage-deflate) frames, so a WS flow yields metadata only, not the
+		// prompt/tool payload. See relayWebSocket.
+		if isWebSocketUpgrade(req) {
+			p.relayWebSocket(host, port, req, br, client)
+			return
+		}
+
 		// Read a bounded prefix of the body so we can parse it. If the body fits
 		// the cap we forward those exact bytes; if it's larger we forward the
 		// prefix + the rest of the stream UNCHANGED and skip parsing, so a huge
@@ -225,6 +236,127 @@ func (p *Proxy) pump(host, port string, client *tls.Conn) {
 		if writeErr != nil || req.Close || resp.Close {
 			return
 		}
+	}
+}
+
+// isWebSocketUpgrade reports whether req is an RFC 6455 WebSocket opening
+// handshake (Connection: Upgrade + Upgrade: websocket, case-insensitive).
+func isWebSocketUpgrade(req *http.Request) bool {
+	if !tokenListContains(req.Header.Get("Connection"), "upgrade") {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(req.Header.Get("Upgrade")), "websocket")
+}
+
+// tokenListContains reports whether a comma-separated header value contains tok
+// (case-insensitive), e.g. Connection: "keep-alive, Upgrade".
+func tokenListContains(header, tok string) bool {
+	for _, part := range strings.Split(header, ",") {
+		if strings.EqualFold(strings.TrimSpace(part), tok) {
+			return true
+		}
+	}
+	return false
+}
+
+// relayWebSocket handles a WebSocket flow on an inspected (TLS-terminated) host.
+// It records a metadata-only capture of the opening request, replays the
+// handshake to the real upstream over HTTP/1.1, and — once the upstream returns
+// 101 Switching Protocols — relays the upgraded connection as an opaque
+// bidirectional byte tunnel. The post-101 stream is WebSocket frames (masked,
+// possibly permessage-deflate compressed); we deliberately do NOT parse them, so
+// the agent keeps working even though we don't extract the prompt/tool payload.
+//
+// br is the buffered reader over the decrypted client conn — it may already hold
+// bytes the client sent after the handshake, so we drain it (not the raw conn)
+// into the upstream.
+func (p *Proxy) relayWebSocket(host, port string, req *http.Request, br *bufio.Reader, client net.Conn) {
+	// Metadata-only capture: we can't see the body/tools inside WS frames, but we
+	// can record that this runtime opened a provider WS to this path.
+	if p.OnCapture != nil {
+		p.OnCapture(Capture{
+			Host:     host,
+			Endpoint: wsEndpoint(host, req.URL.Path),
+			When:     time.Now(),
+		})
+	}
+	p.logger.Printf("[wire] %s %s -> websocket upgrade (tunneled, metadata only)", host, req.URL.Path)
+
+	// Dial upstream and replay the handshake byte-faithfully over HTTP/1.1.
+	dialer := &net.Dialer{Timeout: 15 * time.Second}
+	rawConn, err := dialer.Dial("tcp", net.JoinHostPort(host, port))
+	if err != nil {
+		writeBadGateway(client)
+		return
+	}
+	upTLS := p.upstreamTLS.Clone()
+	upTLS.ServerName = host
+	if len(upTLS.NextProtos) == 0 {
+		upTLS.NextProtos = []string{"http/1.1"} // RFC 6455 upgrade needs HTTP/1.1
+	}
+	up := tls.Client(rawConn, upTLS)
+	if err := up.Handshake(); err != nil {
+		rawConn.Close()
+		writeBadGateway(client)
+		return
+	}
+	defer up.Close()
+
+	outReq := req.Clone(req.Context())
+	outReq.URL.Scheme = "https"
+	outReq.URL.Host = host
+	outReq.Host = host
+	outReq.RequestURI = ""
+	if err := outReq.Write(up); err != nil {
+		writeBadGateway(client)
+		return
+	}
+
+	// Read the handshake response. Use a buffered reader; it may capture bytes the
+	// server sent immediately after the 101 (the first WS frames).
+	upBR := bufio.NewReader(up)
+	resp, err := http.ReadResponse(upBR, outReq)
+	if err != nil {
+		writeBadGateway(client)
+		return
+	}
+	// Relay the response headers to the client verbatim (the 101, or a non-101
+	// rejection like 426/401 which the client must see).
+	if err := resp.Write(client); err != nil {
+		resp.Body.Close()
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		return // not upgraded; nothing more to tunnel
+	}
+
+	// Switch to an opaque bidirectional tunnel. CRUCIAL: drain the buffered bytes
+	// already pulled into br (client side) and upBR (server side) before raw
+	// copying, or we'd drop the first frames.
+	var once sync.Once
+	shutdown := func() { once.Do(func() { client.Close(); up.Close() }) }
+	done := make(chan struct{}, 1)
+	go func() { // client -> upstream
+		_, _ = io.Copy(up, br)
+		shutdown()
+		done <- struct{}{}
+	}()
+	_, _ = io.Copy(client, upBR) // upstream -> client
+	shutdown()
+	<-done
+}
+
+// wsEndpoint gives a stable logical name for a provider WebSocket flow, e.g.
+// "openai/responses (ws)" for OpenAI's /v1/responses WS endpoint.
+func wsEndpoint(host, path string) string {
+	switch {
+	case strings.Contains(host, "openai") && strings.Contains(path, "responses"):
+		return "openai/responses (ws)"
+	case strings.Contains(host, "anthropic"):
+		return "anthropic (ws)"
+	default:
+		return host + " (ws)"
 	}
 }
 

@@ -33,6 +33,17 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
         completionHandler()
     }
 
+    // Signing identifiers we must NOT intercept, or we'd create a routing loop:
+    // the Go proxy terminates TLS then dials the REAL provider:443 to forward —
+    // and that dial is itself a :443 flow. Without this bypass the extension
+    // re-intercepts the proxy's own upstream and loops it back, so the forward
+    // never reaches the provider (agent gets 502). Excluding our daemon's source
+    // app is the NE equivalent of mitmproxy's "exclude the proxy's own user".
+    private let bypassSourceIdentifiers: Set<String> = [
+        "com.github.cipher982.agentobservatory.agents",                          // the Go daemon/helper
+        "com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension", // self
+    ]
+
     // Returning false hands the flow back to the kernel for direct, untouched
     // delivery (transparent-proxy semantics). We only take TCP :443 flows; once
     // we return true we are committed to the flow, so a non-allowlisted SNI
@@ -41,6 +52,12 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
         guard let tcp = flow as? NEAppProxyTCPFlow,
               let remote = tcp.remoteEndpoint as? NWHostEndpoint,
               remote.port == "443" else {
+            return false
+        }
+        // Never intercept our own daemon's upstream connections (avoids the loop).
+        let source = flow.metaData.sourceAppSigningIdentifier
+        if bypassSourceIdentifiers.contains(source) {
+            log.log("bypass own flow source=\(source, privacy: .public) -> \(remote.hostname, privacy: .public)")
             return false
         }
         open(tcp, remote: remote)
