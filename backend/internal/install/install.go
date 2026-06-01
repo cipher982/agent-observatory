@@ -40,13 +40,18 @@ const (
 	labelPrefix = "com.github.cipher982.agentobservatory"
 )
 
-// EnvVars are the variables the install sets globally. Just one, and it is
-// ADDITIVE: NODE_EXTRA_CA_CERTS adds our CA to Node's trust store without
-// replacing the system roots, so Node-based agents (Claude Code) accept the
-// proxy while every other host keeps validating against the normal roots.
-// Routing is the NetworkExtension's job, so no proxy vars are set; rustls and
-// the AWS Go SDK get trust from the login keychain instead.
-var EnvVars = []string{"NODE_EXTRA_CA_CERTS"}
+// EnvVars are the variables the install sets globally. Both are ADDITIVE — they
+// add our CA without replacing the system roots, so unrelated HTTPS is
+// unaffected — and both are needed because the two flagship runtimes don't read
+// the macOS keychain reliably:
+//   - NODE_EXTRA_CA_CERTS  — Claude Code (Node/Bun) adds our CA to Node's roots.
+//   - CODEX_CA_CERTIFICATE — Codex CLI (rustls/native, NOT rustls-platform-verifier)
+//     adds our CA via its own custom-CA path; keychain trust alone is unreliable
+//     for it (especially its WebSocket path). Codex honors this and SSL_CERT_FILE;
+//     we use CODEX_CA_CERTIFICATE because it's additive, not root-replacing.
+// Routing is the NetworkExtension's job, so no proxy vars are set; the AWS Go SDK
+// (Bedrock) reads the login keychain and needs no env.
+var EnvVars = []string{"NODE_EXTRA_CA_CERTS", "CODEX_CA_CERTIFICATE"}
 
 // Target captures every path/knob the installer touches, so it can run against a
 // fake root in tests or the real system in production. Construct via DefaultTarget
@@ -204,7 +209,8 @@ func (t Target) Uninstall() error {
 
 func (t Target) envMap(caPath string) map[string]string {
 	return map[string]string{
-		"NODE_EXTRA_CA_CERTS": caPath,
+		"NODE_EXTRA_CA_CERTS":  caPath,
+		"CODEX_CA_CERTIFICATE": caPath,
 	}
 }
 

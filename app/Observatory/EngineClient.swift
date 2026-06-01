@@ -71,6 +71,9 @@ final class EngineClient {
     private(set) var installStatusText = "Install status not checked yet"
     private(set) var streamConnected = false
     private(set) var pulse = 0                           // increments on each live event (drives animations)
+    // Non-nil when an agent rejected the capture CA (untrusted-issuer) — i.e.
+    // capture is breaking that agent. Surfaced as a warning in live mode.
+    private(set) var captureWarning: String?
 
     // Live capture is served by the installed launchd daemon on the fixed ports.
     // Demo mode runs an app-owned engine on DISTINCT ports so it never collides
@@ -306,8 +309,17 @@ final class EngineClient {
     private func healthOK() async -> Bool {
         var req = URLRequest(url: baseURL.appendingPathComponent("healthz"))
         req.timeoutInterval = 2
-        guard let (_, resp) = try? await session.data(for: req),
+        guard let (data, resp) = try? await session.data(for: req),
               let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return false }
+        // Surface the daemon's "an agent rejected our CA" signal in live mode.
+        if mode == .live,
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let fails = obj["clientTLSFailures"] as? Int, fails > 0 {
+            let host = (obj["lastTLSFailHost"] as? String) ?? "a provider"
+            captureWarning = "An agent rejected the capture certificate for \(host) (\(fails)×). Restart that agent so it picks up the trusted CA, or disable capture."
+        } else if mode != .live {
+            captureWarning = nil
+        }
         return true
     }
 

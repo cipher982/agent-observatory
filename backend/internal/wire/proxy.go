@@ -40,6 +40,11 @@ type Proxy struct {
 	ca        *CA
 	logger    *log.Logger
 	OnCapture func(Capture)
+	// OnClientHandshakeError fires when a CLIENT (the agent) fails the TLS
+	// handshake against our leaf — almost always "the agent doesn't trust our CA"
+	// (UnknownIssuer). The daemon uses this to warn that capture is breaking an
+	// agent rather than silently degrading it.
+	OnClientHandshakeError func(host string, err error)
 
 	upstreamTLS *tls.Config
 	inspectHost func(host string) bool
@@ -125,6 +130,9 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	tlsConn := tls.Server(clientConn, &tls.Config{Certificates: []tls.Certificate{*leaf}})
 	if err := tlsConn.Handshake(); err != nil {
 		p.logger.Printf("[wire] tls handshake %s: %v", host, err)
+		if p.OnClientHandshakeError != nil {
+			p.OnClientHandshakeError(host, err)
+		}
 		return
 	}
 	defer tlsConn.Close()

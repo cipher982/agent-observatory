@@ -238,13 +238,23 @@ installs its CA into your **login keychain** (per-user, never the System
 keychain) at the moment you approve the system extension; `agents uninstall` (and
 disabling capture) removes that trust.
 
-One honest caveat on trust: rustls-based runtimes (Codex) and the AWS Go SDK
-(Bedrock) read the macOS keychain, so login-keychain trust alone covers them.
-Node/Bun (Claude Code) does **not** read the keychain by default, so the install
-also sets the *additive* `NODE_EXTRA_CA_CERTS` for it. That variable only adds
-Observatory's CA — it never replaces the system roots — so unrelated HTTPS is
-unaffected. The install sets **no** `HTTPS_PROXY`/`HTTP_PROXY` and **no**
-root-replacing `SSL_CERT_FILE`/`AWS_CA_BUNDLE`: routing is the extension's job.
+Honest caveats on trust — runtimes resolve roots differently, so a single
+keychain root isn't enough:
+
+- **Claude Code (Node/Bun)** doesn't read the macOS keychain by default → the
+  install sets the *additive* `NODE_EXTRA_CA_CERTS`.
+- **Codex CLI** uses rustls + native-tls, **not** `rustls-platform-verifier`, so
+  keychain trust alone is unreliable (its WebSocket path rejected our CA in
+  testing) → the install sets the *additive* `CODEX_CA_CERTIFICATE` (Codex's own
+  custom-CA var).
+- **Bedrock via the AWS Go SDK** reads the login keychain directly → no env var.
+
+Both env vars only *add* Observatory's CA; they never replace the system roots,
+so unrelated HTTPS is unaffected. The install sets **no** `HTTPS_PROXY`/
+`HTTP_PROXY` and **no** root-replacing `SSL_CERT_FILE`/`AWS_CA_BUNDLE`: routing is
+the extension's job. Caveat: env vars only reach **newly launched** agents — a
+shell or agent already running when you enable capture won't trust the CA (and
+will fail provider TLS) until restarted.
 
 ```mermaid
 sequenceDiagram
@@ -295,7 +305,7 @@ Important boundaries:
 
 | Command | Purpose |
 | --- | --- |
-| `agents install` | Install ambient capture: proxy daemon, stable local CA, and additive Node trust. |
+| `agents install` | Install ambient capture: proxy daemon, stable local CA, and additive per-runtime CA env (`NODE_EXTRA_CA_CERTS`, `CODEX_CA_CERTIFICATE`). |
 | `agents trust install` | Trust the local CA in your login keychain (run behind the approved extension). |
 | `agents status` | Show installed, partial, or absent setup state. |
 | `agents uninstall` | Fully reverse the install. |
@@ -338,16 +348,20 @@ Capture mechanism:
 - The SNI peek reassembles across TCP segments but assumes a single-record
   ClientHello; an unusually large multi-record hello fails open (not captured).
 
-Node/Bun trust (`NODE_EXTRA_CA_CERTS`):
+Per-runtime CA trust (`NODE_EXTRA_CA_CERTS`, `CODEX_CA_CERTIFICATE`):
 
-- It's additive trust, not routing — and it only helps **newly launched** Node
-  processes that inherit the env. Already-running shells must restart.
-- A Node client that passes an explicit `ca:` option, sanitizes its env, or
-  embeds its own runtime won't pick it up. Bun honors only its own CA store, so
-  some Bun-based tools need explicit config. (rustls/Codex and the AWS Go SDK use
-  the keychain and need no env.)
-- Trusting the CA changes the validated root set for inheriting Node processes;
-  it's removed by `agents uninstall`.
+- It's additive trust, not routing — and it only helps **newly launched**
+  processes that inherit the env. Already-running shells/agents must restart, or
+  they'll fail provider TLS with an untrusted-issuer error while capture is on.
+- **Node/Bun (Claude Code):** a client that passes an explicit `ca:` option,
+  sanitizes its env, or embeds its own runtime won't pick up
+  `NODE_EXTRA_CA_CERTS`. Bun honors only its own CA store for some operations.
+- **Codex CLI:** uses rustls + native-tls, not `rustls-platform-verifier`, so it
+  ignores the keychain; it honors `CODEX_CA_CERTIFICATE` (which we set) and
+  `SSL_CERT_FILE`. Verified against codex 0.134.x.
+- **Bedrock (AWS Go SDK):** reads the login keychain directly, needs no env.
+- These vars add a trusted root for inheriting processes; removed by
+  `agents uninstall`.
 
 Scope:
 

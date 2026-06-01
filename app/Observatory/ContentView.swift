@@ -21,6 +21,17 @@ struct ContentView: View {
                 HeroBackground(pulse: engine.pulse, live: engine.streamConnected)
                 detail
             }
+            .safeAreaInset(edge: .top) {
+                if let warning = engine.captureWarning {
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.black)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.yellow.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .navigationTitle("Agent Observatory")
         .toolbar {

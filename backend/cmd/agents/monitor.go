@@ -80,7 +80,14 @@ func runMonitor(args []string) int {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"ok": true, "mode": "monitor", "proxy": "http://" + proxyAddr, "caPath": srv.CAPath()})
+		tlsFails, tlsFailHost := srv.ClientTLSFailures()
+		writeJSON(w, map[string]any{
+			"ok": true, "mode": "monitor", "proxy": "http://" + proxyAddr, "caPath": srv.CAPath(),
+			// Non-zero means an agent rejected our leaf cert (untrusted CA) — i.e.
+			// capture is breaking that agent. The app surfaces this as a warning.
+			"clientTLSFailures": tlsFails,
+			"lastTLSFailHost":   tlsFailHost,
+		})
 	})
 	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
 		if demo {

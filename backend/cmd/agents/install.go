@@ -55,7 +55,7 @@ func runInstall(args []string) int {
 	fmt.Println()
 	fmt.Println("  local proxy daemon:", t.PlistPathPublic())
 	fmt.Println("  local CA:", t.CAPEMPublic())
-	fmt.Println("  Node trust (additive):", t.ProfilePath, "+ launchctl setenv (NODE_EXTRA_CA_CERTS)")
+	fmt.Println("  runtime CA trust:", t.ProfilePath, "+ launchctl setenv (NODE_EXTRA_CA_CERTS, CODEX_CA_CERTIFICATE)")
 	fmt.Println()
 	fmt.Println("Enable the NetworkExtension in Agent Observatory to route provider flows here;")
 	fmt.Println("it diverts only allowlisted LLM hosts, so unrelated traffic is untouched.")
@@ -78,7 +78,7 @@ func runUninstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "uninstall completed with issues: %v\n", err)
 		return 1
 	}
-	fmt.Println("Agent Observatory uninstalled: daemon, local CA, keychain trust, and Node trust removed.")
+	fmt.Println("Agent Observatory uninstalled: daemon, local CA, keychain trust, and runtime CA env removed.")
 	fmt.Println("Open a new terminal for the env changes to clear.")
 	// The system extension can only be deactivated by the app that hosts it (a CLI
 	// can't), so tell the user how to finish removing it.
@@ -116,7 +116,7 @@ func runStatus(args []string) int {
 	}
 	fmt.Println("Agent Observatory — install status")
 	fmt.Printf("  %s stable CA         %s\n", mark(s.CAExists), t.CAPEMPublic())
-	fmt.Printf("  %s Node trust block  %s\n", mark(s.ProfileBlock), t.ProfilePath)
+	fmt.Printf("  %s runtime CA block  %s\n", mark(s.ProfileBlock), t.ProfilePath)
 	fmt.Printf("  %s launchd daemon    %s\n", mark(s.PlistExists), t.PlistPathPublic())
 	if s.ProfileBlock {
 		for _, k := range install.EnvVars {

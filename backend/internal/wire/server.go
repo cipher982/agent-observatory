@@ -24,11 +24,13 @@ type Server struct {
 	srv   *http.Server
 	log   *log.Logger
 
-	mu          sync.Mutex
-	sessionID   string
-	captures    []Capture
-	subscribers map[int]chan Capture
-	nextSub     int
+	mu              sync.Mutex
+	sessionID       string
+	captures        []Capture
+	subscribers     map[int]chan Capture
+	nextSub         int
+	clientTLSFails  int // agent handshakes rejected (untrusted CA)
+	lastTLSFailHost string
 }
 
 // NewServer builds a proxy server with an ephemeral CA whose PEM is written under
@@ -55,8 +57,23 @@ func newServerWithCA(ca *CA, logger *log.Logger) *Server {
 	s := &Server{ca: ca, log: logger, subscribers: map[int]chan Capture{}}
 	p := NewProxy(ca, logger)
 	p.OnCapture = s.record
+	p.OnClientHandshakeError = func(host string, _ error) {
+		s.mu.Lock()
+		s.clientTLSFails++
+		s.lastTLSFailHost = host
+		s.mu.Unlock()
+	}
 	s.proxy = p
 	return s
+}
+
+// ClientTLSFailures reports how many times an agent rejected our leaf cert (the
+// "agent doesn't trust the CA" case) and the most recent host. The daemon
+// surfaces this so the UI can warn that capture is breaking an agent.
+func (s *Server) ClientTLSFailures() (count int, lastHost string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.clientTLSFails, s.lastTLSFailHost
 }
 
 // Subscribe returns a channel that receives every future capture, plus an

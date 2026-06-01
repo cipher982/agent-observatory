@@ -30,7 +30,7 @@ func runDoctor(args []string) int {
 	}
 	probes := []probe{
 		{"claude", "claude", "Bun/Node + @aws-sdk (Bedrock)", "NE routes provider flows; trust via additive NODE_EXTRA_CA_CERTS (Node ignores the keychain); SigV4 forwarded byte-identical"},
-		{"codex", "codex", "Rust/rustls (reqwest)", "NE routes provider flows; trust via login keychain (rustls platform verifier)"},
+		{"codex", "codex", "Rust (rustls + native-tls)", "NE routes provider flows; trust via additive CODEX_CA_CERTIFICATE (Codex doesn't use the platform verifier, so the keychain alone is unreliable)"},
 		{"antigravity", "antigravity", "Node (opaque .pb transcripts)", "NE routes provider flows; trust via NODE_EXTRA_CA_CERTS (untested)"},
 	}
 
@@ -63,9 +63,10 @@ func runDoctor(args []string) int {
 	fmt.Println("sends only allowlisted provider :443 flows to Observatory, so unrelated")
 	fmt.Println("traffic is never diverted (no global HTTPS_PROXY hijack).")
 	fmt.Println("Verified capture uses a local MITM hop between the agent process and Observatory.")
-	fmt.Println("Trust lives in your LOGIN keychain (never the System keychain), plus the")
-	fmt.Println("additive NODE_EXTRA_CA_CERTS for Node, which does not read the keychain.")
-	fmt.Println("Provider-bound upstream TLS still uses the normal system trust store.")
+	fmt.Println("Trust lives in your LOGIN keychain (never the System keychain), plus additive")
+	fmt.Println("per-runtime CA vars for the runtimes that don't read it: NODE_EXTRA_CA_CERTS")
+	fmt.Println("(Node/Claude Code) and CODEX_CA_CERTIFICATE (Codex). The AWS Go SDK (Bedrock)")
+	fmt.Println("reads the keychain directly. Provider-bound upstream TLS still uses system trust.")
 	return 0
 }
 
