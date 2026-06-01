@@ -10,7 +10,7 @@ settings:
     SWIFT_VERSION: "5.0"
     MACOSX_DEPLOYMENT_TARGET: "26.0"
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2"
     ENABLE_HARDENED_RUNTIME: YES
     # Notarization requires a secure timestamp and forbids the debug-only
     # get-task-allow entitlement. xcodebuild's non-archive default omits the

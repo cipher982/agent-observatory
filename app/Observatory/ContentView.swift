@@ -8,6 +8,7 @@ import SwiftUI
 //    cross the wire in realtime.
 struct ContentView: View {
     @Environment(EngineClient.self) private var engine
+    @Environment(ProxyController.self) private var proxy
     @AppStorage("observatory.onboarding.completed") private var onboardingCompleted = false
     @AppStorage("observatory.onboarding.visible") private var onboardingVisible = true
     @State private var selection: SessionView.ID?
@@ -62,6 +63,7 @@ struct ContentView: View {
                 onboardingVisible = true
             }
             engine.start(mode: engine.mode)
+            proxy.refreshStatus() // reflect real capture state in the menu/kill switch
         }
         .onDisappear { engine.stop() }
         .onChange(of: engine.mode) { _, _ in selection = nil }
