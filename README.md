@@ -145,9 +145,11 @@ proxy** that routes only allowlisted LLM-provider flows to the local proxy.
 
 Then use Claude, Codex, and other agents normally. The system extension diverts
 only provider traffic to Observatory; everything else is untouched. There is no
-global `HTTPS_PROXY` hijack. The one env var the install sets is the *additive*
-`NODE_EXTRA_CA_CERTS`, because Node-based agents (Claude Code) don't read the
-macOS keychain — it adds Observatory's CA without replacing the system roots.
+global `HTTPS_PROXY` hijack. The only env vars the install sets are the *additive*
+`NODE_EXTRA_CA_CERTS` (Node/Claude Code) and `CODEX_CA_CERTIFICATE` (Codex) —
+because those runtimes don't read the macOS keychain. Both only *add* Observatory's
+CA without replacing the system roots; Bedrock via the AWS Go SDK reads the
+keychain directly and needs nothing.
 
 No wrapper command in the primary flow. No managed launch. No browser extension.
 The onboarding panel also exposes the reset command; the equivalent CLI command
@@ -283,11 +285,12 @@ Important boundaries:
   without breaking trust. Any process running as you could read that key while
   capture is installed — a same-user local risk, removed by `agents uninstall`.
 - Upstream provider TLS still uses normal system trust.
-- **In memory**, the proxy parses the full request body and keeps a bounded ring
-  (most-recent 500 captures) of the assembled prompt + tool text to drive the
-  live feed and instruction matching. **On disk**, only *derived facts* are
-  persisted — prompt length, endpoint, tool names — never raw prompt bodies.
-  Instruction matching is computed against your resolved local instruction files.
+- **In memory**, the proxy parses the request body (up to an 8 MiB cap — larger
+  bodies are forwarded unparsed) and keeps a bounded ring (most-recent 500
+  captures) of the assembled prompt + tool text to drive the live feed and
+  instruction matching. **On disk**, only *derived facts* are persisted — prompt
+  length, endpoint, tool names — never raw prompt bodies. Instruction matching is
+  computed against your resolved local instruction files.
 
 ## Compatibility
 
