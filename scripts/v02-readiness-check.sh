@@ -122,8 +122,20 @@ if [ -x "$INSTALLED_HELPER" ]; then
   else
     bad "installed helper does not report overall: installed"
   fi
+  trust_out="$("$INSTALLED_HELPER" trust status 2>&1 || true)"
+  if grep -q 'CA is trusted in the login keychain' <<<"$trust_out"; then
+    ok "current local CA is trusted in the login keychain"
+  else
+    bad "current local CA is not trusted in the login keychain"
+  fi
 else
   bad "installed helper missing from /Applications"
+fi
+
+if have curl && curl -fsS http://127.0.0.1:7878/healthz >/dev/null 2>&1; then
+  ok "ambient daemon healthz responds"
+else
+  bad "ambient daemon healthz does not respond on 127.0.0.1:7878"
 fi
 
 if have systemextensionsctl; then
