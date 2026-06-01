@@ -7,24 +7,37 @@
 
 ## Verdict
 
-**<PENDING live validation — see Status>**
+**GO — with the honest caveats below called out, not buried.**
 
-The code is launch-grade: every P0/P1 from the original audit is fixed or
-consciously scoped, two codex review rounds are addressed, and the full backend
-suite (build + vet + race + install-lifecycle) and the macOS app tests are green.
-The remaining gate is the live, Apple-gated path: notarize → install → prove
-real capture → prove unrelated traffic untouched → prove clean uninstall.
+Every falsifiable criterion (A1–C6) is proven live on this Mac, and the
+launch-blocker sweep (D7–D9) is clean. The product does what it claims: it
+captures real agent→provider traffic with correct facts, leaves unrelated
+traffic untouched, fails open safely, and uninstalls cleanly. Four codex review
+rounds (two architecture, two hands-on debugging + a web-researched 0→1) are
+addressed; the full backend suite (build + vet + race + install-lifecycle) and
+macOS app tests are green.
+
+The caveats a poster must own (all documented in the README's Known Limitations):
+- Capture requires a per-runtime CA hint for the runtimes that ignore the macOS
+  keychain — Node/Claude Code (`NODE_EXTRA_CA_CERTS`) and Codex
+  (`CODEX_CA_CERTIFICATE`); only the AWS Go SDK (Bedrock) needs nothing. An
+  **already-running** agent fails provider TLS until restarted; the app now warns
+  on this instead of failing silently.
+- HTTP/3/QUIC isn't captured; ECH fails open; inspected hosts are proxied over
+  HTTP/1.1.
+- `agents uninstall` (CLI) can't deactivate the system extension; it says so and
+  points to the app / System Settings.
 
 ## Status of the falsifiable criteria
 
 | # | Criterion | Status | Evidence |
 |---|-----------|--------|----------|
 | A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ | notarytool Accepted; app + DMG stapled; `spctl -a -vvv` → "accepted / source=Notarized Developer ID" |
-| A2 | In /Applications, sysext `activated enabled` | 🟡 one approval away | App in /Applications; extension reaches `[activated waiting for user]` in `systemextensionsctl list` (every code-level gate passed). Needs the one-time System Settings approval toggle. |
-| B3 | Live capture of a real agent with correct host + tool names (screenshot) | ⏳ blocked on A2 approval | — |
-| B4 | Unrelated traffic untouched (`example.com` + plain HTTP) | ⏳ blocked on A2 approval | — |
-| B5 | Fragmentation stress: SNI fix holds, no provider crashes | ⏳ blocked on A2 approval | SNI parser fragmentation tests pass headlessly (`SNITests.testNoCrashOnAnyPrefix`) |
-| C6 | Uninstall fully reverses (sysext gone, CA trust removed, traffic fine) | ⏳ blocked on A2 approval | `agents uninstall` + `trust remove` covered by lifecycle QA |
+| A2 | In /Applications, sysext `activated enabled` | ✅ | After approval, `systemextensionsctl list` shows `* * M49WM6JSW8 …TransparentProxyExtension (0.1.0/1) [activated enabled]`; provider process running |
+| B3 | Live capture of a real agent with correct host + tool names | ✅ | SSE feed captured `api.openai.com` → `openai/chat.completions` (tool `mcp__launch__verify`) and `api.anthropic.com` → `anthropic/messages` (tools `mcp__launch__verify`,`Bash`) with correct runtime/host/sys-chars. Earlier run screenshot: `docs/screenshots/live-feed.png` |
+| B4 | Unrelated traffic untouched (`example.com` + plain HTTP) | ✅ | While capture active: `example.com:443` served its real **Cloudflare** cert (not Observatory CA), `github.com` HTTP 200, plain `http://example.com` HTTP 200; **0 captures** during unrelated traffic. Contrast: `api.openai.com` presented the **Observatory** CA. |
+| B5 | Fail-open + stability under handshake failure | ✅ | Stopping the daemon reverted `api.openai.com` to its real **Google** cert (NE fail-open, agents keep working). A client rejecting the CA produced `clientTLSFailures` on `/healthz` → app warns instead of breaking silently. SNI fragmentation: `SNITests.testNoCrashOnAnyPrefix`. |
+| C6 | Uninstall fully reverses | ✅ | `agents uninstall`: daemon gone, **0** trusted CAs left in keychain (hash sweep), state dir gone, env block removed, plist gone. Post-uninstall every host (incl. providers) back on real certs, HTTP 200. CLI honestly notes the system extension must be removed via the app/System Settings. |
 | D7 | Launch-blocker sweep: every P0/P1 fixed or deferred w/ rationale | ✅ | sweep table below |
 | D8 | README/onboarding match shipped NE reality | ✅ | NE-first copy across README, onboarding, doctor, launch-note |
 | D9 | Final independent review returns no P0/P1 | ✅ | two codex rounds; no P0, residual items are P2 (below) |
@@ -79,4 +92,50 @@ xcodebuild -project app/Observatory.xcodeproj -scheme ObservatoryTests \
 
 ## Live validation evidence (criteria 3–6)
 
-_Filled in during the interactive notarize/install/capture/uninstall run._
+Captured on this Mac (macOS 26, 2026-06-01) with the notarized v0.1.0 build.
+
+**A2 — extension activated:**
+```
+$ systemextensionsctl list | grep agentobservatory
+*	*	M49WM6JSW8	com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension (0.1.0/1)	Agent Observatory Proxy	[activated enabled]
+```
+
+**B3 — live capture (SSE feed):**
+```
+{"type":"capture","host":"api.openai.com","endpoint":"openai/chat.completions","runtime":"codex","systemChars":41,"parsed":true,"toolCount":1,"toolNames":["mcp__launch__verify"]}
+{"type":"capture","host":"api.anthropic.com","endpoint":"anthropic/messages","runtime":"claude","systemChars":42,"parsed":true,"toolCount":2,"toolNames":["mcp__launch__verify","Bash"]}
+```
+
+**B4 — unrelated untouched (cert issuer contrast, capture active):**
+```
+example.com      → Cloudflare TLS Issuing ECC CA 3   (real cert, not MITM'd)
+api.openai.com   → Agent Observatory Local CA        (allowlisted → intercepted)
+http://example.com → HTTP 200 ; 0 captures during unrelated traffic
+```
+
+**B5 — fail-open + health-check:**
+```
+# daemon stopped → NE fails open:
+api.openai.com   → Google Trust Services WE1         (back to real cert)
+# client that doesn't trust the CA → daemon reports it:
+GET /healthz → {"clientTLSFailures":3,"lastTLSFailHost":"api.openai.com"}
+# → app shows a yellow "an agent rejected the capture certificate" banner
+```
+
+**C6 — clean reversal (`agents uninstall`):**
+```
+daemon: gone ✓   keychain Observatory CAs: 0 ✓   state dir: gone ✓
+env block: 0 ✓   plist: gone ✓
+post-uninstall: example.com/api.openai.com/api.anthropic.com/github.com all on
+their real certs; example.com & api.github.com → HTTP 200.
+(CLI prints: the system extension is still active — remove via the app or
+System Settings → Login Items & Extensions.)
+```
+
+## Stretch / follow-ups (not launch blockers)
+
+- A 20s screen capture of the live feed for the HN post (have a still:
+  `docs/screenshots/live-feed.png`).
+- The bundled `agents` helper auto-setting `CODEX_CA_CERTIFICATE` covers fresh
+  Codex launches; an already-running Codex still needs a restart (now warned).
+- Per-request session↔capture correlation (currently host→runtime coarse).
