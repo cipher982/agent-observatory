@@ -146,21 +146,44 @@ func trustInstall(caPath string) int {
 }
 
 func trustRemove(caPath string) int {
-	if _, err := os.Stat(caPath); err != nil {
-		// CA file already gone (e.g. uninstall ran first); nothing to remove by file.
-		fmt.Printf("trust: CA file absent, nothing to remove\n")
-		return 0
+	// Remove trust settings for the current CA file (if it still exists)...
+	if _, err := os.Stat(caPath); err == nil {
+		cmd := exec.Command("security", "remove-trusted-cert", caPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "trust remove (non-fatal): %v\n", err)
+		}
 	}
-	cmd := exec.Command("security", "remove-trusted-cert", caPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		// Non-fatal: the cert may not have been trusted.
-		fmt.Fprintf(os.Stderr, "trust remove (non-fatal): %v\n", err)
-		return 0
+	// ...then sweep EVERY Observatory CA out of the login keychain by SHA-256 hash
+	// (and its trust settings via -t). Re-installs over time can leave multiple
+	// same-CN roots trusted; delete-certificate -c refuses an ambiguous name, so
+	// we enumerate hashes and delete each. Uninstall must clear ALL of them.
+	if kc, err := loginKeychain(); err == nil {
+		for _, hash := range observatoryCAHashes(kc) {
+			if err := exec.Command("security", "delete-certificate", "-Z", hash, "-t", kc).Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "trust remove (non-fatal): could not delete %s: %v\n", hash, err)
+			}
+		}
 	}
 	fmt.Println("trust: CA trust removed from login keychain")
 	return 0
+}
+
+// observatoryCAHashes returns the SHA-256 hashes of every cert named caCommonName
+// in the given keychain.
+func observatoryCAHashes(keychain string) []string {
+	out, err := exec.Command("security", "find-certificate", "-a", "-c", caCommonName, "-Z", keychain).Output()
+	if err != nil {
+		return nil
+	}
+	var hashes []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "SHA-256 hash: "); ok {
+			hashes = append(hashes, strings.TrimSpace(rest))
+		}
+	}
+	return hashes
 }
 
 func trustStatus(caPath string) int {
