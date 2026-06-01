@@ -61,6 +61,13 @@ func runTrust(args []string) int {
 // wire.LoadOrCreateCA, so `security find-certificate -c` can locate it.
 const caCommonName = "Agent Observatory Local CA"
 
+// caAlreadyTrusted reports whether our CA is present in the login keychain. The
+// only way add-trusted-cert errors with "parameters not valid" is when the cert
+// already exists with trust settings, so presence here means trust is in place.
+func caAlreadyTrusted(keychain string) bool {
+	return exec.Command("security", "find-certificate", "-c", caCommonName, keychain).Run() == nil
+}
+
 func loginKeychain() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -79,6 +86,13 @@ func trustInstall(caPath string) int {
 		fmt.Fprintf(os.Stderr, "trust install: %v\n", err)
 		return 1
 	}
+	// Idempotent: re-running add-trusted-cert on an ALREADY-trusted cert fails with
+	// "SecTrustSettingsSetTrustSettings: One or more parameters … not valid". Since
+	// re-enabling capture re-runs this, treat an already-trusted CA as success.
+	if caAlreadyTrusted(kc) {
+		fmt.Printf("trust: CA already trusted in login keychain (%s)\n", caPath)
+		return 0
+	}
 	// add-trusted-cert with -r trustAsRoot on the LOGIN keychain (no sudo). The
 	// user is prompted once by the Security framework to authorize the change.
 	cmd := exec.Command("security", "add-trusted-cert",
@@ -90,6 +104,12 @@ func trustInstall(caPath string) int {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		// A second-chance check: the cert may already be trusted (the error above
+		// is exactly what an already-trusted cert returns), in which case we're done.
+		if caAlreadyTrusted(kc) {
+			fmt.Printf("trust: CA already trusted in login keychain (%s)\n", caPath)
+			return 0
+		}
 		fmt.Fprintf(os.Stderr, "trust install: %v\n", err)
 		return 1
 	}
