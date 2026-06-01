@@ -132,22 +132,23 @@ final class EngineClient {
         Task { [weak self] in await self?.checkInstallStatus() }
     }
 
-    // Monotonic token so overlapping restarts can't resume out of order. Each
-    // restart bumps it; after the async stop completes, a restart only proceeds
-    // if it's still the latest. (All reads/writes are on the main actor.)
+    // Restarts are serialized through a single task chain: each one awaits the
+    // previous restart (its stop AND start) before running, and a newer restart
+    // supersedes an older queued one. This guarantees the old app-owned process
+    // has fully exited — releasing its demo ports — before the next one spawns,
+    // even under a fast Demo↔Live↔Demo toggle.
+    private var restartChain: Task<Void, Never>?
     private var restartGeneration = 0
 
-    // Switch modes. We stop and WAIT for the old app-owned process to fully exit
-    // (releasing its port) before relaunching, so a fast Demo↔Live toggle can't
-    // race the port. Runs async because waitUntilExit() must not block the main
-    // actor.
     func restart(mode newMode: ObservatoryMode) {
         restartGeneration += 1
         let generation = restartGeneration
-        Task { [weak self] in
+        let previous = restartChain
+        restartChain = Task { [weak self] in
+            await previous?.value
             guard let self else { return }
             await self.stopAndWait()
-            // A newer restart superseded us while we waited — let it win.
+            // A newer restart was requested while we waited — let it win.
             guard generation == self.restartGeneration else { return }
             self.mode = newMode
             self.state = .starting
@@ -165,6 +166,10 @@ final class EngineClient {
         process?.terminate(); process = nil
     }
 
+    // Stop the poll/stream loops and WAIT for the app-owned process to fully exit
+    // (waitUntilExit runs off the main actor). Only restart() calls this, and
+    // restarts are serialized via restartChain, so there's no concurrent caller
+    // that could observe process == nil while the old one is still exiting.
     private func stopAndWait() async {
         pollTask?.cancel(); streamTask?.cancel()
         guard let p = process else { return }

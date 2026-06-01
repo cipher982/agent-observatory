@@ -170,28 +170,11 @@ func (s *Server) Observations(runtime, sessionID string) []fact.Observation {
 // cross-attributed across runtimes (e.g. a Codex/OpenAI capture under a Claude
 // session). hostRuntime maps an upstream host to a runtime label.
 func (s *Server) ObservationsForRuntime(runtime, sessionID string, res resolver.Resolution, hostRuntime func(host string) string) []fact.Observation {
-	all := s.ObservationsForResolution(runtime, sessionID, res)
-	if hostRuntime == nil {
-		return all
+	var keep func(Capture) bool
+	if hostRuntime != nil {
+		keep = func(c Capture) bool { return hostRuntime(c.Host) == runtime }
 	}
-	s.mu.Lock()
-	caps := make([]Capture, len(s.captures))
-	copy(caps, s.captures)
-	s.mu.Unlock()
-	// Build the set of request ids (wire-<i>) that belong to this runtime.
-	keep := map[string]bool{}
-	for i, c := range caps {
-		if hostRuntime(c.Host) == runtime {
-			keep[fmt.Sprintf("wire-%d", i)] = true
-		}
-	}
-	out := all[:0]
-	for _, o := range all {
-		if keep[o.Epoch.RequestID] {
-			out = append(out, o)
-		}
-	}
-	return out
+	return s.observations(runtime, sessionID, res, keep)
 }
 
 // ObservationsForResolution converts captured wire requests into VERIFIED
@@ -199,6 +182,13 @@ func (s *Server) ObservationsForRuntime(runtime, sessionID string, res resolver.
 // a COMPLETE-coverage source for instruction text when the request body was
 // parsed in memory.
 func (s *Server) ObservationsForResolution(runtime, sessionID string, res resolver.Resolution) []fact.Observation {
+	return s.observations(runtime, sessionID, res, nil)
+}
+
+// observations is the shared core: one snapshot of the capture ring, optionally
+// filtered by keep. Taking a single snapshot is what keeps request ids stable —
+// the ring can rotate concurrently, but we index into the copy we hold.
+func (s *Server) observations(runtime, sessionID string, res resolver.Resolution, keep func(Capture) bool) []fact.Observation {
 	s.mu.Lock()
 	caps := make([]Capture, len(s.captures))
 	copy(caps, s.captures)
@@ -206,6 +196,9 @@ func (s *Server) ObservationsForResolution(runtime, sessionID string, res resolv
 
 	var out []fact.Observation
 	for i, c := range caps {
+		if keep != nil && !keep(c) {
+			continue
+		}
 		ep := fact.Epoch{SessionID: sessionID, RequestID: fmt.Sprintf("wire-%d", i)}
 		out = append(out, evidence.ObserveInstructionText("wire", fact.Verified, runtime, ep, c.AllText, res, true)...)
 		// Tools: each offered tool is a Present, Complete-coverage VERIFIED fact.
