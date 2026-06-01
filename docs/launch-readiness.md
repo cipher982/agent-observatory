@@ -17,15 +17,18 @@
 
 ### The two defects found by real-agent testing
 
-1. **Routing loop (P0, affected ALL capture).** The Go proxy terminates TLS, then
-   dials the real provider:443 to forward — but that dial is itself a provider
-   :443 flow, so the NE extension **re-intercepts the proxy's own upstream** and
-   loops it back. Forward never reached the provider; the agent got 502. A
-   capture event still appeared, which is exactly why the earlier "GO" was wrong.
-   **Fixed in code** (`handleNewFlow` bypasses flows whose
-   `sourceAppSigningIdentifier` is our daemon; helper signed with a stable id) —
-   **but NOT yet verified live**, because loading the fixed extension safely
-   needs an isolated environment (see runbook).
+1. **Routing loop (P0, affected ALL capture). — FIXED & VERIFIED LIVE.** The Go
+   proxy terminates TLS, then dials the real provider:443 to forward — but that
+   dial was itself a provider :443 flow, so the NE extension **re-intercepted the
+   proxy's own upstream** and looped it back. Forward never reached the provider;
+   the agent got 502. A capture event still appeared, which is exactly why the
+   earlier "GO" was wrong. **Fixed** (`handleNewFlow` bypasses flows whose
+   `sourceAppSigningIdentifier` is our daemon; helper signed with a stable id) and
+   **verified live on 2026-06-01** using dev-scoped capture (only a signed test
+   harness intercepted; host agents untouched): the harness got real provider
+   responses through the proxy — `api.openai.com/v1/models` → **HTTP 401**,
+   `api.anthropic.com/v1/messages` → **HTTP 405** — NOT 502. The forward reaches
+   the real provider; no loop.
 
 2. **Codex WebSocket transport (P1, Codex-specific).** Codex's primary transport
    is `wss://api.openai.com/v1/responses`. Our proxy now relays the WS upgrade
@@ -46,11 +49,13 @@
 
 ### What must happen before a real GO
 
-- Re-verify in an **isolated macOS VM** (host disk is currently too full): load
-  the loop-fixed extension, prove a CA-trusting client gets a real provider
-  response (HTTP 401, not 502) and the daemon log shows no "unknown authority"
-  loop, then prove a real **Claude Code** (HTTP-path) agent captures AND
-  completes. Scope Codex out honestly.
+- **DONE:** the routing-loop fix is verified live (dev-scoped harness → real
+  provider 401/405, no loop). No VM needed — `docs/scoped-capture-dev.md` shows
+  the safe on-host method.
+- **Remaining:** run a real **Claude Code** (HTTP-path) agent under dev-scope and
+  confirm it both captures AND completes its turn (the harness proves the forward;
+  this proves a real agent's full round-trip). Then decide global enablement.
+- Scope Codex out honestly (WebSocket transport rejects our CA).
 
 The caveats a poster must own regardless (in README Known Limitations): per-runtime
 CA hints; already-running agents must restart (app warns); HTTP/3/QUIC not
@@ -86,12 +91,13 @@ curl --cacert ~/.local/state/agent-observatory/ca/observatory-ca.pem \
 |---|-----------|--------|----------------|
 | A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ | notarytool Accepted; app + DMG stapled; `spctl -a -vvv` → "accepted / source=Notarized Developer ID" |
 | A2 | In /Applications, sysext `activated enabled` | ✅ | After approval, `systemextensionsctl list` shows `[activated enabled]`; provider process running |
-| B3 | Live capture of a real agent, captured AND agent completes | ⚠️ partial | Capture/parse PROVEN on real bodies (correct host/endpoint/tools/prompt-len). But the FORWARD path looped (routing-loop P0) so the agent itself got 502 — the request never reached the provider. Loop fix committed, **unverified live**. Re-test in VM. |
+| B3 | Live capture of a real agent, captured AND agent completes | ⚠️ partial | Capture/parse PROVEN on real bodies; forward path now PROVEN via dev-scoped harness (real 401/405, not 502 — loop fixed). Still TODO: a full real HTTP-path agent (Claude Code) run that captures AND completes end-to-end. |
 | B4 | Unrelated traffic untouched | ✅ | While active, `example.com:443` kept its real **Cloudflare** cert (not Observatory CA), plain HTTP 200, **0 captures** during unrelated traffic; only `api.openai.com` presented the Observatory CA. |
 | B5 | Fail-open + stability | ✅ | Stopping the daemon reverted providers to real certs (NE fail-open → agents keep working — verified repeatedly). Client CA-reject → `clientTLSFailures` on `/healthz` → app warns. SNI fragmentation tests pass. |
 | C6 | Uninstall fully reverses | 🟡 mostly | `agents uninstall`: daemon gone, **0** trusted CAs (hash sweep verified 2→0), state dir/env/plist gone, all hosts back on real certs. Gap: the CLI can't deactivate the system extension (it fails open without the daemon; a menu-bar **Disable Live Capture** kill switch now deactivates it from the app). |
-| — | Routing loop fixed | ⚠️ code-only | `handleNewFlow` bypasses the daemon's own upstream flows; **needs live VM verification** (the single most important remaining proof). |
+| — | Routing loop fixed | ✅ verified live | `handleNewFlow` bypasses the daemon's own upstream flows; proven on-host via dev-scoped harness (real 401/405, no loop). |
 | — | Codex (WebSocket) capture | ❌ unsupported v0.1 | Codex's wss path rejects our CA; document as unsupported, don't claim it. |
+| — | Safe on-host iteration | ✅ | dev-scope allowlist (`/tmp/agent-observatory-dev-scope`) + signed `devharness` + menu kill switch; lets us test the real kernel path without a VM or risking host agents. See `docs/scoped-capture-dev.md`. |
 | D7 | Launch-blocker sweep: every original-audit P0/P1 fixed | ✅ | sweep table below (the routing loop was a NEW P0 found later by live testing) |
 | D8 | README/onboarding match shipped NE reality | ✅ | NE-first copy across README, onboarding, doctor, launch-note (+ Codex-unsupported caveat) |
 | D9 | Final independent review returns no P0/P1 | ⚠️ | static-review rounds were clean, but LIVE testing then found the routing-loop P0 — the lesson being that static review can't catch a kernel-routing loop. Re-run after live VM verification. |
