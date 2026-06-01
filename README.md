@@ -354,6 +354,15 @@ make release-qa
 make v02-readiness
 ```
 
+The final interactive release gates are grouped behind an explicit helper:
+
+```bash
+make v02-finalize                         # read-only status
+scripts/v02-finalize.sh --trust           # may prompt for login-keychain trust
+NOTARY_PROFILE=<profile> scripts/v02-finalize.sh --notarize
+CONFIRM_PUBLISH_V02=1 scripts/v02-finalize.sh --publish
+```
+
 The DMG is the primary user-facing artifact. It contains
 **Agent Observatory.app** and an **Applications** symlink for the normal macOS
 drag-install flow. The zip is a fallback. A build is publication-ready only

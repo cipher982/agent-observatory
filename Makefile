@@ -1,4 +1,4 @@
-.PHONY: qa backend-qa app-project app-build release release-polished notarize release-layout-qa release-qa v02-readiness release-open clean
+.PHONY: qa backend-qa app-project app-build release release-polished notarize release-layout-qa release-qa v02-readiness v02-finalize release-open clean
 
 VERSION ?= 0.2.0
 DERIVED_DATA ?= /tmp/observatory-dd
@@ -54,6 +54,9 @@ release-qa:
 
 v02-readiness:
 	bash scripts/v02-readiness-check.sh
+
+v02-finalize:
+	bash scripts/v02-finalize.sh
 
 release-open: release
 	open "$(RELEASE_APP)"

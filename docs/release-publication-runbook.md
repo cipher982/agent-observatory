@@ -65,6 +65,12 @@ gh release create v0.2.0 \
 Do not create the release until the `VERSION`, app `MARKETING_VERSION`, and
 bundled helper version all report `0.2.0`.
 
+Equivalent guarded helper:
+
+```bash
+CONFIRM_PUBLISH_V02=1 scripts/v02-finalize.sh --publish
+```
+
 ## 5. Verify Publication
 
 ```bash

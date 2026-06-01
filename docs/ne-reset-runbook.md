@@ -50,6 +50,7 @@ v0.2 release gate, they must pass.
 ```bash
 "/Applications/Agent Observatory.app/Contents/Resources/agents" install
 "/Applications/Agent Observatory.app/Contents/Resources/agents" status
+"/Applications/Agent Observatory.app/Contents/Resources/agents" trust status
 launchctl print "gui/$(id -u)/com.github.cipher982.agentobservatory"
 curl -fsS http://127.0.0.1:7878/healthz
 ```
@@ -59,8 +60,16 @@ Expected:
 - status reports `overall: installed`;
 - launchd service exists;
 - `/healthz` returns `ok: true`;
+- trust status reports the current local CA is trusted in the login keychain
+  after the explicit trust step below;
 - no proxy env vars such as `HTTPS_PROXY`/`HTTP_PROXY` are installed by
   Observatory.
+
+When ready for the macOS Security authorization prompt:
+
+```bash
+"/Applications/Agent Observatory.app/Contents/Resources/agents" trust install
+```
 
 ## 4. Enable The System Extension
 
