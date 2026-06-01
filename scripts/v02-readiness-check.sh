@@ -8,7 +8,7 @@ set -u -o pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.2.0}"
 APP_NAME="Agent Observatory.app"
 DMG_NAME="Agent-Observatory-${VERSION}-macOS.dmg"
 ZIP_NAME="Agent-Observatory-${VERSION}-macOS.zip"
@@ -159,26 +159,39 @@ else
 fi
 
 if have gh; then
-  release_ok=0
-  if gh release view v0.2.0 --repo cipher982/agent-observatory --json tagName,targetCommitish,name >/dev/null 2>&1; then
-    ok "v0.2.0 release exists"
-    release_ok=1
+  v02_json="$(gh release view v0.2.0 --repo cipher982/agent-observatory --json name,assets 2>/dev/null || true)"
+  if [ -z "$v02_json" ]; then
+    bad "v0.2.0 release does not exist"
   else
-    v01_json="$(gh release view v0.1.0 --repo cipher982/agent-observatory --json name,assets 2>/dev/null || true)"
-    if [ -n "$v01_json" ] && [ -f "$DIST/SHA256SUMS" ]; then
+    ok "v0.2.0 release exists"
+    if grep -q "Agent Observatory" <<<"$v02_json"; then
+      ok "v0.2.0 release name uses Agent Observatory"
+    else
+      bad "v0.2.0 release name does not use Agent Observatory"
+    fi
+
+    tag_sha="$(git ls-remote origin "refs/tags/v0.2.0^{}" "refs/tags/v0.2.0" 2>/dev/null | awk 'END {print $1}')"
+    if [ -n "$tag_sha" ] && [ "$tag_sha" = "$head_sha" ]; then
+      ok "v0.2.0 tag points at current commit"
+    else
+      bad "v0.2.0 tag does not point at current commit"
+    fi
+
+    if [ -f "$DIST/SHA256SUMS" ]; then
       dmg_sha="$(awk '/Agent-Observatory-.*-macOS[.]dmg$/ {print $1}' "$DIST/SHA256SUMS")"
       zip_sha="$(awk '/Agent-Observatory-.*-macOS[.]zip$/ {print $1}' "$DIST/SHA256SUMS")"
       bin_sha="$(awk '/agents$/ {print $1}' "$DIST/SHA256SUMS")"
-      if grep -q "Agent Observatory" <<<"$v01_json" &&
-         grep -q "sha256:$dmg_sha" <<<"$v01_json" &&
-         grep -q "sha256:$zip_sha" <<<"$v01_json" &&
-         grep -q "sha256:$bin_sha" <<<"$v01_json"; then
-        ok "v0.1.0 release has been refreshed with current local assets"
-        release_ok=1
+      sums_sha="$(shasum -a 256 "$DIST/SHA256SUMS" | awk '{print $1}')"
+      if grep -q "sha256:$dmg_sha" <<<"$v02_json" &&
+         grep -q "sha256:$zip_sha" <<<"$v02_json" &&
+         grep -q "sha256:$bin_sha" <<<"$v02_json" &&
+         grep -q "sha256:$sums_sha" <<<"$v02_json"; then
+        ok "v0.2.0 release assets match current local artifacts"
+      else
+        bad "v0.2.0 release assets do not match current local artifacts"
       fi
-    fi
-    if [ "$release_ok" -eq 0 ]; then
-      bad "no v0.2.0 release and v0.1.0 assets/name do not match current local artifacts"
+    else
+      bad "cannot compare v0.2.0 release assets without dist/SHA256SUMS"
     fi
   fi
 else

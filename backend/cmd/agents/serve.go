@@ -35,7 +35,7 @@ func runServe(args []string) int {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"ok": true, "version": "0.1.0", "ts": time.Now().UTC()})
+		writeJSON(w, map[string]any{"ok": true, "version": observatoryVersion, "ts": time.Now().UTC()})
 	})
 
 	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {

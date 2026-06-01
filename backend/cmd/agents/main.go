@@ -21,6 +21,8 @@ import (
 	"os"
 )
 
+const observatoryVersion = "0.2.0"
+
 func main() {
 	// Fold persisted wire captures into the fact pipeline as VERIFIED evidence
 	// (no-op when none exist).
@@ -34,7 +36,7 @@ func main() {
 			sub = first
 			args = args[1:]
 		case first == "version", first == "-v", first == "--version":
-			fmt.Println("agent-observatory 0.1.0")
+			fmt.Println("agent-observatory " + observatoryVersion)
 			return
 		case first == "help", first == "-h", first == "--help":
 			usage()

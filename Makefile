@@ -1,6 +1,6 @@
 .PHONY: qa backend-qa app-project app-build release release-polished notarize release-layout-qa release-qa v02-readiness release-open clean
 
-VERSION ?= 0.1.0
+VERSION ?= 0.2.0
 DERIVED_DATA ?= /tmp/observatory-dd
 APP_CONFIGURATION ?= Debug
 DMG_STYLE ?= headless

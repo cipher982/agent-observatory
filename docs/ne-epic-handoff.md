@@ -54,9 +54,8 @@ login keychain.
 ### Your remaining interactive steps
 
 ### 2. Signing config (project.yml)
-Switch both targets to manual signing and point at your profiles. In `app/project.yml`, the
-app and `TransparentProxyExtension` targets currently use `CODE_SIGN_STYLE: Automatic` as a
-local-dev default. For the release build set, per target:
+Both targets are set up for Developer ID manual signing in `app/project.yml`.
+For a different Apple team or profile set, update each target's signing block:
 ```yaml
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "Developer ID Application"
@@ -67,12 +66,11 @@ Then `cd app && xcodegen generate`.
 
 ### 3. Build, sign, notarize
 ```bash
-make release            # builds app + embedded sysext (Release)
-# sign is driven by the profiles above; then notarize the .app (or the DMG):
-xcrun notarytool submit dist/Agent-Observatory-0.1.0-macOS.dmg \
-  --keychain-profile "<your notarytool profile>" --wait
-xcrun stapler staple "dist/Agent Observatory.app"
+make release
+NOTARY_PROFILE="<your notarytool profile>" make notarize
+make release-qa
 ```
+The default release path is headless and does not run Finder AppleScript.
 Hardened runtime is already on (`ENABLE_HARDENED_RUNTIME: YES`).
 
 ### 4. Install & approve

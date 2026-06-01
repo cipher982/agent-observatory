@@ -19,7 +19,7 @@
   <img alt="Go" src="https://img.shields.io/badge/Go-1.26-00ADD8">
   <img alt="SwiftUI" src="https://img.shields.io/badge/SwiftUI-Liquid%20Glass-7c3aed">
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/cipher982/agent-observatory/ci.yml?branch=main&label=CI">
-  <img alt="Version" src="https://img.shields.io/badge/version-v0.1.0-f59e0b">
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.2.0-f59e0b">
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 
 The intended first-run experience is the native app:
 
-1. Download `Agent-Observatory-0.1.0-macOS.dmg` from Releases.
+1. Download `Agent-Observatory-0.2.0-macOS.dmg` from Releases.
 2. Open the DMG and drag **Agent Observatory.app** to **Applications**.
 3. Open **Agent Observatory.app** from Applications.
 4. Start with the built-in demo feed. No account, proxy, or trust setup is
@@ -40,9 +40,9 @@ The intended first-run experience is the native app:
    `agents` CLI install is required first.
 
 The native app currently targets the macOS 26 preview because it uses the new
-Liquid Glass SwiftUI surface. The release build is **Developer ID signed,
-hardened-runtime, and notarized** (stapled), so it opens without a Gatekeeper
-override.
+Liquid Glass SwiftUI surface. Public release artifacts are Developer ID signed,
+hardened-runtime, notarized, stapled, and checked by `make release-qa` before
+publication.
 
 ### Enabling live capture
 
@@ -119,7 +119,7 @@ fact-level model.
 The public artifact is a DMG:
 
 ```bash
-open Agent-Observatory-0.1.0-macOS.dmg
+open Agent-Observatory-0.2.0-macOS.dmg
 ```
 
 Drag **Agent Observatory.app** to **Applications**, then open it. The app starts
@@ -328,8 +328,8 @@ make release
 
 Artifacts are written to `dist/`:
 
-- `Agent-Observatory-0.1.0-macOS.dmg`
-- `Agent-Observatory-0.1.0-macOS.zip`
+- `Agent-Observatory-0.2.0-macOS.dmg`
+- `Agent-Observatory-0.2.0-macOS.zip`
 - `Agent Observatory.app`
 - `agents`
 - `SHA256SUMS`
@@ -356,8 +356,8 @@ make v02-readiness
 
 The DMG is the primary user-facing artifact. It contains
 **Agent Observatory.app** and an **Applications** symlink for the normal macOS
-drag-install flow. The zip is a fallback. The public release build is Developer
-ID signed and notarized.
+drag-install flow. The zip is a fallback. A build is publication-ready only
+after `make release-qa` passes against the stapled app and DMG.
 
 Security notes for the local CA, prompt-data handling, and vulnerability reports
 are in [SECURITY.md](SECURITY.md).
@@ -424,5 +424,7 @@ make release-qa
 ```
 
 Detailed release and planning notes live under `docs/`, including
-[`docs/v0.2-readiness.md`](docs/v0.2-readiness.md) and
-[`docs/ne-reset-runbook.md`](docs/ne-reset-runbook.md).
+[`docs/v0.2-readiness.md`](docs/v0.2-readiness.md),
+[`docs/ne-reset-runbook.md`](docs/ne-reset-runbook.md),
+[`docs/release-publication-runbook.md`](docs/release-publication-runbook.md),
+and [`docs/release-v0.2-draft.md`](docs/release-v0.2-draft.md).
