@@ -34,6 +34,8 @@ targets:
         com.apple.developer.system-extension.install: true
         com.apple.developer.networking.networkextension:
           - app-proxy-provider-systemextension
+        com.apple.security.application-groups:
+          - $(TeamIdentifierPrefix)com.github.cipher982.agentobservatory.Observatory
     info:
       path: Observatory/Info.plist
       properties:
@@ -91,9 +93,10 @@ targets:
       properties:
         com.apple.developer.networking.networkextension:
           - app-proxy-provider-systemextension
-        com.apple.security.app-sandbox: true
-        com.apple.security.network.client: true
-        com.apple.security.network.server: true
+        # NetworkExtension system-extension templates put NEMachServiceName in an
+        # application-group namespace; the Developer ID profile grants M49WM6JSW8.*.
+        com.apple.security.application-groups:
+          - $(TeamIdentifierPrefix)com.github.cipher982.agentobservatory.Observatory
     info:
       path: TransparentProxyExtension/Info.plist
       properties:
@@ -126,7 +129,6 @@ targets:
         CODE_SIGN_IDENTITY: "Developer ID Application"
         PROVISIONING_PROFILE_SPECIFIER: "Agent Observatory Ext DevID"
         ENABLE_HARDENED_RUNTIME: YES
-        ENABLE_APP_SANDBOX: YES
         SWIFT_VERSION: "5.0"
 
   ObservatoryTests:
