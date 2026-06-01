@@ -40,23 +40,18 @@ The intended first-run experience is the native app:
    `agents` CLI install is required first.
 
 The native app currently targets the macOS 26 preview because it uses the new
-Liquid Glass SwiftUI surface. The release build is ad-hoc signed; a broad public
-binary download should be Developer ID signed and notarized first.
+Liquid Glass SwiftUI surface. The release build is **Developer ID signed,
+hardened-runtime, and notarized** (stapled), so it opens without a Gatekeeper
+override.
 
-### First Open
+### Enabling live capture
 
-Until the app is Developer ID signed and notarized, macOS may block the first
-launch of a downloaded build. If double-clicking the app is rejected:
-
-1. Open **System Settings** → **Privacy & Security**.
-2. Find the blocked **Agent Observatory** message.
-3. Click **Open Anyway**, then confirm the launch.
-
-Advanced fallback:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Agent\ Observatory.app
-```
+Live capture installs a macOS **system extension** (NetworkExtension transparent
+proxy). On first enable, macOS asks you to approve it in **System Settings →
+General → Login Items & Extensions → Network Extensions**, then prompts once to
+trust the local CA in your login keychain. Approve both and capture starts
+immediately. (System extensions only activate from **/Applications**, so install
+the app there first.)
 
 No Xcode required for the backend-only smoke test. Requires Go 1.26:
 
@@ -226,15 +221,22 @@ Yes, verified capture uses a local MITM hop for inspected provider requests.
 That explicit local interception is what makes HTTPS body inspection possible.
 
 Capture ingress is a macOS **NetworkExtension transparent proxy** (a signed,
-user-approved system extension). The kernel routes only outbound provider flows
-to Observatory; all other traffic flows normally **by construction** — there is
-no global `HTTPS_PROXY`/`HTTP_PROXY` hijack and unrelated hosts are never
-diverted. The extension matches the LLM-provider allowlist by TLS SNI and relays
-those flows to the local proxy, which terminates TLS and reads only derived
-facts. For agents to accept the local proxy's certificates, Observatory installs
-its CA into your **login keychain** (per-user, never the System keychain) at the
-moment you approve the system extension; `agents uninstall` (and disabling
-capture) removes that trust.
+user-approved system extension). To inspect by hostname, the extension's kernel
+rule takes **all outbound TCP :443 flows** into the (local, user-space) system
+extension, peeks the TLS ClientHello SNI, and then:
+
+- **allowlisted provider SNI** → relays the flow to the local proxy, which
+  terminates TLS and parses the request; or
+- **anything else** → **immediately direct-relays** to the real destination with
+  **no TLS termination and nothing persisted** — the flow is untouched in every
+  way that matters (its bytes are copied through; we never see plaintext).
+
+So there is no global `HTTPS_PROXY`/`HTTP_PROXY` hijack, and only provider flows
+are ever decrypted. (Loopback/RFC1918 are excluded at the kernel rule; UDP/QUIC
+is never taken.) For agents to accept the local proxy's certificates, Observatory
+installs its CA into your **login keychain** (per-user, never the System
+keychain) at the moment you approve the system extension; `agents uninstall` (and
+disabling capture) removes that trust.
 
 One honest caveat on trust: rustls-based runtimes (Codex) and the AWS Go SDK
 (Bedrock) read the macOS keychain, so login-keychain trust alone covers them.
@@ -263,15 +265,19 @@ Important boundaries:
 - The CA is installed into your per-user **login** keychain (behind the system
   extension approval), never the macOS **System** keychain, and is removed on
   uninstall.
-- Only allowlisted provider flows are routed to the proxy; unrelated traffic is
-  never diverted, so the CA is never exercised against non-provider hosts.
+- Only allowlisted provider flows are ever TLS-terminated; non-provider :443
+  flows are direct-relayed after the SNI peek, so the CA is never exercised
+  against — and the proxy never sees plaintext for — non-provider hosts.
 - A stable CA certificate and private key are stored under Observatory's local
-  state directory so the ambient daemon can restart without breaking trust.
+  state directory (`0600` key, per-user) so the ambient daemon can restart
+  without breaking trust. Any process running as you could read that key while
+  capture is installed — a same-user local risk, removed by `agents uninstall`.
 - Upstream provider TLS still uses normal system trust.
-- Raw prompt bodies are not persisted.
-- Persisted capture state stores derived facts: prompt length, endpoint, and
-  tool names. Instruction matching is computed against your resolved local
-  instruction files without storing raw prompt bodies.
+- **In memory**, the proxy parses the full request body and keeps a bounded ring
+  (most-recent 500 captures) of the assembled prompt + tool text to drive the
+  live feed and instruction matching. **On disk**, only *derived facts* are
+  persisted — prompt length, endpoint, tool names — never raw prompt bodies.
+  Instruction matching is computed against your resolved local instruction files.
 
 ## Compatibility
 
@@ -315,15 +321,38 @@ Artifacts are written to `dist/`:
 
 The DMG is the primary user-facing artifact. It contains
 **Agent Observatory.app** and an **Applications** symlink for the normal macOS
-drag-install flow. The zip is a fallback.
-
-The local release build is ad-hoc signed. A broad public binary download should
-be Developer ID signed and notarized first.
+drag-install flow. The zip is a fallback. The release build is Developer ID
+signed and notarized.
 
 ## Current Limitations
 
+Capture mechanism:
+
+- **HTTP/3 (QUIC) is not captured.** The extension takes TCP :443 only; provider
+  HTTP/3 falls back to TCP in practice, but a QUIC-only client would be missed.
+- **ECH / no-SNI flows fail open.** If a provider enables Encrypted ClientHello,
+  the SNI is unreadable and the flow is direct-relayed (not captured), never
+  broken.
+- **Inspected hosts are proxied over HTTP/1.1.** Mainstream provider SDKs accept
+  this; a hypothetical HTTP/2-only client is unsupported on the inspected path.
+- The SNI peek reassembles across TCP segments but assumes a single-record
+  ClientHello; an unusually large multi-record hello fails open (not captured).
+
+Node/Bun trust (`NODE_EXTRA_CA_CERTS`):
+
+- It's additive trust, not routing — and it only helps **newly launched** Node
+  processes that inherit the env. Already-running shells must restart.
+- A Node client that passes an explicit `ca:` option, sanitizes its env, or
+  embeds its own runtime won't pick it up. Bun honors only its own CA store, so
+  some Bun-based tools need explicit config. (rustls/Codex and the AWS Go SDK use
+  the keychain and need no env.)
+- Trusting the CA changes the validated root set for inheriting Node processes;
+  it's removed by `agents uninstall`.
+
+Scope:
+
 - macOS 26 and Xcode 26 are required for the native Liquid Glass app.
-- Verified capture requires explicit proxy/trust setup.
+- Verified capture requires the system-extension approval + login-keychain trust.
 - Antigravity transcript contents are discovery-only when stored in opaque `.pb`
   files.
 - This release observes context. It does not yet manage canonical context
@@ -333,9 +362,9 @@ be Developer ID signed and notarized first.
 
 | Next | Why it matters |
 | --- | --- |
-| Signed and notarized macOS release | Makes public binary distribution low-friction. |
 | Short demo clip | Helps people understand the live feed before cloning. |
 | Broader runtime notes | Clarifies install-once capture behavior across agent stacks. |
+| HTTP/3 + multi-record SNI capture | Closes the remaining capture-coverage gaps. |
 | Canonical context management | Turns the observatory into the control plane after observability proves demand. |
 
 ## Development

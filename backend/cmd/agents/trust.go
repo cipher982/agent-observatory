@@ -1,10 +1,14 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // runTrust manages the local CA's trust in the macOS login keychain. This is the
@@ -61,11 +65,35 @@ func runTrust(args []string) int {
 // wire.LoadOrCreateCA, so `security find-certificate -c` can locate it.
 const caCommonName = "Agent Observatory Local CA"
 
-// caAlreadyTrusted reports whether our CA is present in the login keychain. The
-// only way add-trusted-cert errors with "parameters not valid" is when the cert
-// already exists with trust settings, so presence here means trust is in place.
-func caAlreadyTrusted(keychain string) bool {
-	return exec.Command("security", "find-certificate", "-c", caCommonName, keychain).Run() == nil
+// caAlreadyTrusted reports whether the EXACT current CA (matched by SHA-256
+// fingerprint, not just common name) is present in the login keychain. Matching
+// by fingerprint avoids a stale same-CN cert masquerading as trusted while the
+// daemon actually signs with a different key.
+func caAlreadyTrusted(keychain, caPath string) bool {
+	want, err := certSHA256(caPath)
+	if err != nil {
+		return false
+	}
+	// -Z prints the SHA-256 of each matching cert; -a returns all (handles dupes).
+	out, err := exec.Command("security", "find-certificate", "-a", "-c", caCommonName, "-Z", keychain).Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.ToUpper(string(out)), want)
+}
+
+// certSHA256 returns the uppercase hex SHA-256 of the DER cert at path.
+func certSHA256(path string) (string, error) {
+	pemBytes, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return "", fmt.Errorf("no PEM block in %s", path)
+	}
+	sum := sha256.Sum256(block.Bytes)
+	return strings.ToUpper(hex.EncodeToString(sum[:])), nil
 }
 
 func loginKeychain() (string, error) {
@@ -89,7 +117,7 @@ func trustInstall(caPath string) int {
 	// Idempotent: re-running add-trusted-cert on an ALREADY-trusted cert fails with
 	// "SecTrustSettingsSetTrustSettings: One or more parameters … not valid". Since
 	// re-enabling capture re-runs this, treat an already-trusted CA as success.
-	if caAlreadyTrusted(kc) {
+	if caAlreadyTrusted(kc, caPath) {
 		fmt.Printf("trust: CA already trusted in login keychain (%s)\n", caPath)
 		return 0
 	}
@@ -106,7 +134,7 @@ func trustInstall(caPath string) int {
 	if err := cmd.Run(); err != nil {
 		// A second-chance check: the cert may already be trusted (the error above
 		// is exactly what an already-trusted cert returns), in which case we're done.
-		if caAlreadyTrusted(kc) {
+		if caAlreadyTrusted(kc, caPath) {
 			fmt.Printf("trust: CA already trusted in login keychain (%s)\n", caPath)
 			return 0
 		}
@@ -145,10 +173,8 @@ func trustStatus(caPath string) int {
 		fmt.Fprintf(os.Stderr, "trust status: %v\n", err)
 		return 1
 	}
-	// Is OUR CA actually present in the login keychain? Match by the CA's common
-	// name; `security find-certificate -c` exits non-zero when absent.
-	found := exec.Command("security", "find-certificate", "-c", caCommonName, kc).Run() == nil
-	if found {
+	// Is the EXACT current CA (by fingerprint) trusted in the login keychain?
+	if caAlreadyTrusted(kc, caPath) {
 		fmt.Printf("trust: CA is trusted in the login keychain (%s)\n", caPath)
 	} else {
 		fmt.Printf("trust: CA present on disk but not in the login keychain; run `agents trust install`\n")

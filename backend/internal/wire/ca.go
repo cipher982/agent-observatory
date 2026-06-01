@@ -207,11 +207,20 @@ func (c *CA) LeafFor(host string) (*tls.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Apple requires TLS server certs issued after 2019-07-01 to be valid for
+	// 825 days or fewer, or the macOS system verifier rejects them — which is
+	// exactly the path our forged leaves take for keychain-trusting clients. Mint
+	// short-lived (90-day) leaves anchored at "now", clamped to the CA's window.
+	notBefore := time.Now().Add(-5 * time.Minute)
+	notAfter := notBefore.Add(90 * 24 * time.Hour)
+	if notAfter.After(c.cert.NotAfter) {
+		notAfter = c.cert.NotAfter
+	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: host},
-		NotBefore:    c.cert.NotBefore,
-		NotAfter:     c.cert.NotAfter,
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}

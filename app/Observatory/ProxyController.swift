@@ -137,19 +137,21 @@ final class ProxyController: NSObject {
                 }
                 // Reload so the connection reference is valid after save.
                 manager.loadFromPreferences { _ in
-                    do {
-                        try manager.connection.startVPNTunnel()
-                        log.log("transparent proxy started")
-                        // Install CA trust and only mark .active once it actually
-                        // succeeds — otherwise the UI says "active" while agent TLS
-                        // handshakes fail because the CA isn't trusted yet.
-                        Task { @MainActor in
-                            let ok = await self.installCATrust()
-                            self.status = ok ? .active
-                                : .failed("CA trust install failed; agents won't accept the proxy")
+                    // Install CA trust BEFORE starting the tunnel. Otherwise there's
+                    // a window where the proxy intercepts provider flows but agents
+                    // don't yet trust the forged cert, breaking their handshakes.
+                    Task { @MainActor in
+                        guard await self.installCATrust() else {
+                            self.status = .failed("CA trust install failed; agents won't accept the proxy")
+                            return
                         }
-                    } catch {
-                        Task { @MainActor in self.status = .failed("start tunnel: \(error.localizedDescription)") }
+                        do {
+                            try manager.connection.startVPNTunnel()
+                            log.log("transparent proxy started (CA trust already installed)")
+                            self.status = .active
+                        } catch {
+                            self.status = .failed("start tunnel: \(error.localizedDescription)")
+                        }
                     }
                 }
             }

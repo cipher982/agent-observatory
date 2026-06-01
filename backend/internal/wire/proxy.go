@@ -10,8 +10,15 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
+
+// maxParseBody caps how much of an inspected request body we buffer in memory to
+// parse. Real provider requests (even with tools/multimodal) fit comfortably;
+// anything larger is forwarded unparsed so a local process can't grow the
+// always-on daemon's memory without bound by POSTing a huge body to a provider.
+const maxParseBody = 8 << 20 // 8 MiB
 
 // Capture is one observed outbound LLM request (the VERIFIED evidence).
 type Capture struct {
@@ -138,12 +145,18 @@ func (p *Proxy) tunnel(host, port string, client net.Conn) {
 	if _, err := client.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
 		return
 	}
+	// Copy both directions; when EITHER leg ends, close BOTH conns so the other
+	// copy unblocks instead of hanging on a half-open tunnel.
+	var once sync.Once
+	shutdown := func() { once.Do(func() { client.Close(); up.Close() }) }
 	done := make(chan struct{}, 1)
 	go func() {
 		_, _ = io.Copy(up, client)
+		shutdown()
 		done <- struct{}{}
 	}()
 	_, _ = io.Copy(client, up)
+	shutdown()
 	<-done
 }
 
@@ -160,23 +173,35 @@ func (p *Proxy) pump(host, port string, client *tls.Conn) {
 			return
 		}
 
-		// Buffer body so we can parse AND forward it unchanged.
+		// Read a bounded prefix of the body so we can parse it. If the body fits
+		// the cap we forward those exact bytes; if it's larger we forward the
+		// prefix + the rest of the stream UNCHANGED and skip parsing, so a huge
+		// request can't grow the daemon's memory without bound.
 		var bodyBytes []byte
+		var bodyRest io.Reader
 		if req.Body != nil {
-			bodyBytes, _ = io.ReadAll(req.Body)
-			_ = req.Body.Close()
-		}
-
-		if cap, ok := ParseBody(host, req.URL.Path, bodyBytes); ok {
-			cap.Host = host
-			cap.When = time.Now()
-			p.logger.Printf("[wire] %s %s -> %s", host, req.URL.Path, cap.summary())
-			if p.OnCapture != nil {
-				p.OnCapture(cap)
+			bodyBytes, _ = io.ReadAll(io.LimitReader(req.Body, maxParseBody+1))
+			if len(bodyBytes) > maxParseBody {
+				bodyRest = req.Body // forward the remainder; do not buffer it
+			} else {
+				_ = req.Body.Close()
 			}
 		}
 
-		resp, upstream, err := p.forward(host, port, req, bodyBytes)
+		if bodyRest == nil {
+			if cap, ok := ParseBody(host, req.URL.Path, bodyBytes); ok {
+				cap.Host = host
+				cap.When = time.Now()
+				p.logger.Printf("[wire] %s %s -> %s", host, req.URL.Path, cap.summary())
+				if p.OnCapture != nil {
+					p.OnCapture(cap)
+				}
+			}
+		} else {
+			p.logger.Printf("[wire] %s %s -> body over %d bytes; forwarded unparsed", host, req.URL.Path, maxParseBody)
+		}
+
+		resp, upstream, err := p.forwardStream(host, port, req, bodyBytes, bodyRest)
 		if err != nil {
 			p.logger.Printf("[wire] forward %s%s: %v", host, req.URL.Path, err)
 			writeBadGateway(client)
@@ -205,7 +230,18 @@ func (p *Proxy) pump(host, port string, client *tls.Conn) {
 // The returned response body is still attached to the live upstream connection,
 // so the caller can stream it straight back to the agent. The caller MUST close
 // the returned net.Conn once the response has been relayed.
-func (p *Proxy) forward(host, port string, req *http.Request, body []byte) (*http.Response, net.Conn, error) {
+// forwardStream replays the request to the real upstream without touching any
+// signed material: the method, path, query, every header, and the body are
+// forwarded unchanged (we only re-point the URL/Host to dial the real upstream,
+// which the agent already set to the same value). So SigV4 — which signs the
+// canonical request including headers and a body hash — still validates upstream;
+// we never re-sign and hold no AWS credentials.
+//
+// body is the buffered (parsed) prefix; rest, if non-nil, is the remainder of an
+// oversized body that we forward without buffering. The returned response body is
+// still attached to the live upstream connection so the caller can stream it back
+// to the agent; the caller MUST close the returned net.Conn after relaying.
+func (p *Proxy) forwardStream(host, port string, req *http.Request, body []byte, rest io.Reader) (*http.Response, net.Conn, error) {
 	dialer := &net.Dialer{Timeout: 15 * time.Second}
 	rawConn, err := dialer.Dial("tcp", net.JoinHostPort(host, port))
 	if err != nil {
@@ -213,6 +249,13 @@ func (p *Proxy) forward(host, port string, req *http.Request, body []byte) (*htt
 	}
 	upTLS := p.upstreamTLS.Clone()
 	upTLS.ServerName = host
+	// We speak HTTP/1.1 to the decrypted client and replay over HTTP/1.1 upstream,
+	// so advertise only http/1.1 in ALPN — otherwise an h2-negotiating upstream
+	// would expect HTTP/2 framing we don't send. (h2-only clients are unsupported;
+	// the mainstream provider SDKs accept http/1.1.)
+	if len(upTLS.NextProtos) == 0 {
+		upTLS.NextProtos = []string{"http/1.1"}
+	}
 	tlsConn := tls.Client(rawConn, upTLS)
 	if err := tlsConn.Handshake(); err != nil {
 		rawConn.Close()
@@ -225,8 +268,14 @@ func (p *Proxy) forward(host, port string, req *http.Request, body []byte) (*htt
 	outReq.URL.Host = host
 	outReq.Host = host
 	outReq.RequestURI = ""
-	outReq.Body = io.NopCloser(bytes.NewReader(body))
-	outReq.ContentLength = int64(len(body))
+	if rest != nil {
+		// Oversized body: concatenate the buffered prefix with the unread rest and
+		// preserve the original ContentLength (req still carries it).
+		outReq.Body = io.NopCloser(io.MultiReader(bytes.NewReader(body), rest))
+	} else {
+		outReq.Body = io.NopCloser(bytes.NewReader(body))
+		outReq.ContentLength = int64(len(body))
+	}
 
 	if err := outReq.Write(tlsConn); err != nil {
 		tlsConn.Close()

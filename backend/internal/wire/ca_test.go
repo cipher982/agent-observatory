@@ -27,6 +27,28 @@ func TestStableCAReusedWhenValid(t *testing.T) {
 	}
 }
 
+// TestLeafCertValidityWithinAppleLimit: minted leaves must be valid for 825 days
+// or fewer, or the macOS system verifier rejects them (Apple's post-2019 rule).
+// Regression guard for the bug where leaves inherited the CA's 5-year lifetime.
+func TestLeafCertValidityWithinAppleLimit(t *testing.T) {
+	dir := t.TempDir()
+	ca, err := LoadOrCreateCA(dir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := ca.LeafFor("api.anthropic.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	validity := leaf.Leaf.NotAfter.Sub(leaf.Leaf.NotBefore)
+	if validity > 825*24*time.Hour {
+		t.Errorf("leaf validity %v exceeds Apple's 825-day limit", validity)
+	}
+	if len(leaf.Leaf.DNSNames) == 0 {
+		t.Error("leaf must carry a SAN dNSName (Apple requires SAN, not just CN)")
+	}
+}
+
 // TestExpiredStableCAIsRegenerated: an on-disk CA that's no longer usable at the
 // current time must be replaced, not reused — otherwise it silently mints leaves
 // no client will accept.
