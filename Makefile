@@ -19,6 +19,7 @@ app-project:
 	cd app && xcodegen generate
 
 app-build: app-project
+	rm -rf "$(APP_BUNDLE)"
 	xcodebuild -project "$(APP_PROJECT)" -scheme Observatory -configuration "$(APP_CONFIGURATION)" -derivedDataPath "$(DERIVED_DATA)" build
 
 release: APP_CONFIGURATION = Release

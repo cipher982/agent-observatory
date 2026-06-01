@@ -99,6 +99,7 @@ targets:
       path: TransparentProxyExtension/Info.plist
       properties:
         CFBundleDisplayName: Agent Observatory Proxy
+        CFBundlePackageType: SYSX
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSMinimumSystemVersion: "26.0"
