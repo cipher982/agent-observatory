@@ -102,9 +102,11 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSMinimumSystemVersion: "26.0"
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.networkextension.app-proxy
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).TransparentProxyProvider
+        # System extensions declare their provider via NetworkExtension/
+        # NEProviderClasses ONLY. The app-extension-style NSExtension dict makes
+        # Xcode misclassify this as a Foundation app extension and warn that it
+        # belongs in Contents/PlugIns — it does not; a NESystemExtension lives in
+        # Contents/Library/SystemExtensions. Omitting NSExtension silences that.
         NetworkExtension:
           NEProviderClasses:
             com.apple.networkextension.app-proxy: $(PRODUCT_MODULE_NAME).TransparentProxyProvider

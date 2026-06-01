@@ -232,9 +232,40 @@ extension ProxyController: OSSystemExtensionRequestDelegate {
     }
 
     nonisolated func request(_ request: OSSystemExtensionRequest, didFailWithError error: any Error) {
+        let message = Self.activationFailureMessage(error)
         Task { @MainActor in
-            self.status = .failed(error.localizedDescription)
-            log.error("system extension request failed: \(error.localizedDescription)")
+            self.status = .failed(message)
+            log.error("system extension request failed: \(message, privacy: .public)")
+        }
+    }
+
+    // Map OSSystemExtension errors to actionable guidance instead of the opaque
+    // framework string (e.g. "Unable to find any matched extension…").
+    nonisolated static func activationFailureMessage(_ error: any Error) -> String {
+        let ns = error as NSError
+        guard ns.domain == OSSystemExtensionErrorDomain,
+              let code = OSSystemExtensionError.Code(rawValue: ns.code) else {
+            return error.localizedDescription
+        }
+        switch code {
+        case .extensionNotFound:
+            return "Capture extension wasn't found in the running app. Quit Agent Observatory fully and relaunch it from /Applications, then try again."
+        case .unsupportedParentBundleLocation:
+            return "Run Agent Observatory from /Applications (not the DMG or a temp path), then enable live capture again."
+        case .missingEntitlement:
+            return "This build is missing the system-extension entitlement. Install the signed release build."
+        case .validationFailed:
+            return "The capture extension failed macOS signature validation. Reinstall the notarized app."
+        case .forbiddenBySystemPolicy:
+            return "macOS blocked the system extension. Approve Agent Observatory in System Settings → General → Login Items & Extensions, then try again."
+        case .requestCanceled:
+            return "System extension activation was canceled."
+        case .requestSuperseded:
+            return "A newer activation request superseded this one. Try enabling live capture again."
+        case .authorizationRequired:
+            return "Administrator approval is required to enable the capture extension."
+        default:
+            return "System extension activation failed (code \(ns.code)): \(error.localizedDescription)"
         }
     }
 }
