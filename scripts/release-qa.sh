@@ -92,7 +92,7 @@ rm -rf "$zip_root"
 if [ "$EXPECT_NOTARIZED" -eq 1 ]; then
   spctl -a -vvv "$DIST/$APP_NAME" >/dev/null || fail "app is not accepted by Gatekeeper"
   xcrun stapler validate "$DIST/$APP_NAME" >/dev/null || fail "app does not have a stapled notary ticket"
-  spctl -a -vvv -t open "$DIST/$DMG_NAME" >/dev/null || fail "DMG is not accepted by Gatekeeper"
+  spctl -a -vvv -t open --context context:primary-signature "$DIST/$DMG_NAME" >/dev/null || fail "DMG is not accepted by Gatekeeper"
   xcrun stapler validate "$DIST/$DMG_NAME" >/dev/null || fail "DMG does not have a stapled notary ticket"
 fi
 

@@ -98,7 +98,7 @@ else
   bad "dist app is not yet Gatekeeper-accepted + stapled"
 fi
 
-if [ -f "$DMG_PATH" ] && spctl -a -vvv -t open "$DMG_PATH" >/dev/null 2>&1 && xcrun stapler validate "$DMG_PATH" >/dev/null 2>&1; then
+if [ -f "$DMG_PATH" ] && spctl -a -vvv -t open --context context:primary-signature "$DMG_PATH" >/dev/null 2>&1 && xcrun stapler validate "$DMG_PATH" >/dev/null 2>&1; then
   ok "dist DMG is Gatekeeper-accepted and stapled"
 else
   bad "dist DMG is not yet Gatekeeper-accepted + stapled"

@@ -33,10 +33,8 @@ test -x "$HELPER_PATH" || fail "missing executable bundled helper at $HELPER_PAT
 codesign --verify --deep --strict "$APP_PATH" || fail "app codesign verification failed"
 
 if [ -z "${DMG_CODESIGN_IDENTITY:-}" ]; then
-  DMG_CODESIGN_IDENTITY="$(
-    codesign -dv --verbose=4 "$APP_PATH" 2>&1 |
-      awk -F= '/^Authority=Developer ID Application:/ { print $2; exit }'
-  )"
+  codesign_info="$(codesign -dv --verbose=4 "$APP_PATH" 2>&1)"
+  DMG_CODESIGN_IDENTITY="$(awk -F= '/^Authority=Developer ID Application:/ { print $2; exit }' <<<"$codesign_info")"
 fi
 test -n "${DMG_CODESIGN_IDENTITY:-}" || fail "could not infer Developer ID identity for DMG signing"
 
