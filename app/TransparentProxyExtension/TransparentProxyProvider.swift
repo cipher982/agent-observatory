@@ -44,6 +44,23 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
         "com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension", // self
     ]
 
+    // Dev-only safe-iteration scope. If the marker file exists, intercept ONLY
+    // flows whose source app signing id is listed in it; pass EVERYTHING else
+    // through. This can only NARROW interception, never widen it, so a developer
+    // can exercise the real kernel path against a throwaway harness while their
+    // own agents (Codex/Claude/browser) stay untouched. Mirrors mitmproxy's
+    // macOS local mode (scope capture to specific apps). Absent in normal use.
+    private static let devScopePath = "/tmp/agent-observatory-dev-scope"
+    private lazy var devScopeAllowlist: Set<String>? = Self.loadDevScope()
+
+    private static func loadDevScope() -> Set<String>? {
+        guard let text = try? String(contentsOfFile: devScopePath, encoding: .utf8) else { return nil }
+        let ids = text.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        return ids.isEmpty ? nil : Set(ids)
+    }
+
     // Returning false hands the flow back to the kernel for direct, untouched
     // delivery (transparent-proxy semantics). We only take TCP :443 flows; once
     // we return true we are committed to the flow, so a non-allowlisted SNI
@@ -54,10 +71,15 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
               remote.port == "443" else {
             return false
         }
-        // Never intercept our own daemon's upstream connections (avoids the loop).
         let source = flow.metaData.sourceAppSigningIdentifier
+        // Never intercept our own daemon's upstream connections (avoids the loop).
         if bypassSourceIdentifiers.contains(source) {
             log.log("bypass own flow source=\(source, privacy: .public) -> \(remote.hostname, privacy: .public)")
+            return false
+        }
+        // Dev scope: when active, intercept ONLY the allowlisted test app(s).
+        if let scope = devScopeAllowlist, !scope.contains(source) {
+            log.log("dev-scope pass-through source=\(source, privacy: .public) -> \(remote.hostname, privacy: .public)")
             return false
         }
         open(tcp, remote: remote)
