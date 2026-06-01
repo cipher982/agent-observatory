@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -356,64 +355,34 @@ func TestDefaultInspectHostContract(t *testing.T) {
 	}
 }
 
-// TestWebSocketUpgradeIsTunneled proves the proxy doesn't break a WebSocket
-// flow on an inspected host: it must relay the 101 handshake and then tunnel
-// frames bidirectionally (Codex's primary transport is wss://…/responses). We
-// stand up a real WS-ish upstream (101 + a server frame, echoes a client frame)
-// and assert end-to-end delivery + a metadata capture.
-func TestWebSocketUpgradeIsTunneled(t *testing.T) {
+// TestWebSocketUpgradeReplies426 proves that an inspected-host WebSocket upgrade
+// gets a 426 Upgrade Required, NOT a broken opaque tunnel. This is the
+// source-verified mechanism that makes Codex capturable: codex maps a 426 on its
+// wss://…/responses connect straight to its HTTP fallback (which we fully
+// capture), with no retry delay. (A proxied 101 is rejected by strict WS clients
+// as "Attack attempt detected" and yields no payload anyway.)
+func TestWebSocketUpgradeReplies426(t *testing.T) {
 	tmp := t.TempDir()
-
-	// Upstream TLS server that completes an RFC 6455-style upgrade by hand, then
-	// echoes one post-upgrade message back over the hijacked conn.
-	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-			w.WriteHeader(400)
-			return
-		}
-		hj, ok := w.(http.Hijacker)
-		if !ok {
-			t.Error("upstream not hijackable")
-			return
-		}
-		conn, _, err := hj.Hijack()
-		if err != nil {
-			t.Errorf("hijack: %v", err)
-			return
-		}
-		defer conn.Close()
-		// Send the 101 + a "hello" payload, then echo whatever the client sends.
-		_, _ = io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\nSERVER_HELLO")
-		buf := make([]byte, 64)
-		n, _ := conn.Read(buf)
-		_, _ = conn.Write(append([]byte("ECHO:"), buf[:n]...))
-	}))
-	defer upstream.Close()
-	upURL, _ := url.Parse(upstream.URL)
-	upHost, upPort, _ := net.SplitHostPort(upURL.Host)
 
 	srv, err := NewServer(tmp, log.New(io.Discard, "", 0), time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv.SetInspectHost(func(string) bool { return true })
-	upRoots := x509.NewCertPool()
-	upRoots.AddCert(upstream.Certificate())
-	srv.SetUpstreamTLS(&tls.Config{RootCAs: upRoots, MinVersion: tls.VersionTLS12})
 	proxyAddr, err := srv.Listen(0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer srv.Close()
 
-	// Connect to the proxy, CONNECT to the upstream host:port, TLS as a client
-	// trusting our CA, then send a raw WebSocket upgrade and exchange frames.
+	// CONNECT to an arbitrary provider-ish host, TLS with our CA, send a WS upgrade.
 	raw, err := net.Dial("tcp", proxyAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer raw.Close()
-	fmt.Fprintf(raw, "CONNECT %s:%s HTTP/1.1\r\nHost: %s:%s\r\n\r\n", upHost, upPort, upHost, upPort)
+	const host = "api.openai.com"
+	fmt.Fprintf(raw, "CONNECT %s:443 HTTP/1.1\r\nHost: %s:443\r\n\r\n", host, host)
 	connBR := bufio.NewReader(raw)
 	connResp, err := http.ReadResponse(connBR, &http.Request{Method: "CONNECT"})
 	if err != nil || connResp.StatusCode != 200 {
@@ -423,45 +392,17 @@ func TestWebSocketUpgradeIsTunneled(t *testing.T) {
 	caPEM, _ := os.ReadFile(srv.CAPath())
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM(caPEM)
-	tlsConn := tls.Client(raw, &tls.Config{ServerName: upHost, RootCAs: roots})
+	tlsConn := tls.Client(raw, &tls.Config{ServerName: host, RootCAs: roots})
 	if err := tlsConn.Handshake(); err != nil {
 		t.Fatalf("client tls handshake: %v", err)
 	}
-	// Send the WS opening handshake.
-	fmt.Fprintf(tlsConn, "GET /v1/responses HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n", upHost)
-	tlsBR := bufio.NewReader(tlsConn)
-	resp, err := http.ReadResponse(tlsBR, &http.Request{Method: "GET"})
+	fmt.Fprintf(tlsConn, "GET /v1/responses HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n", host)
+	resp, err := http.ReadResponse(bufio.NewReader(tlsConn), &http.Request{Method: "GET"})
 	if err != nil {
-		t.Fatalf("read 101: %v", err)
+		t.Fatalf("read response: %v", err)
 	}
-	if resp.StatusCode != http.StatusSwitchingProtocols {
-		t.Fatalf("status = %d, want 101", resp.StatusCode)
-	}
-	// Read the server's post-upgrade hello (already past the header terminator).
-	hello := make([]byte, len("SERVER_HELLO"))
-	if _, err := io.ReadFull(tlsBR, hello); err != nil {
-		t.Fatalf("read server hello: %v", err)
-	}
-	if string(hello) != "SERVER_HELLO" {
-		t.Errorf("server hello = %q, want SERVER_HELLO", hello)
-	}
-	// Send a client frame, expect the echo — proves the client->upstream leg.
-	if _, err := tlsConn.Write([]byte("PING")); err != nil {
-		t.Fatalf("client write: %v", err)
-	}
-	echo := make([]byte, len("ECHO:PING"))
-	if _, err := io.ReadFull(tlsBR, echo); err != nil {
-		t.Fatalf("read echo: %v", err)
-	}
-	if string(echo) != "ECHO:PING" {
-		t.Errorf("echo = %q, want ECHO:PING", echo)
-	}
-
-	// A metadata-only capture must have been recorded for the WS open (the test
-	// upstream host isn't a real provider, so the endpoint is the generic ws form).
-	caps := srv.Captures()
-	if len(caps) != 1 || !strings.HasSuffix(caps[0].Endpoint, "(ws)") {
-		t.Fatalf("ws capture = %+v, want one *(ws) capture", caps)
+	if resp.StatusCode != http.StatusUpgradeRequired { // 426
+		t.Fatalf("status = %d, want 426 Upgrade Required (drives HTTP fallback)", resp.StatusCode)
 	}
 }
 

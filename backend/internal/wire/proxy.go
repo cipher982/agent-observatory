@@ -181,14 +181,11 @@ func (p *Proxy) pump(host, port string, client *tls.Conn) {
 			return
 		}
 
-		// WebSocket upgrade (RFC 6455): the bytes after the 101 are WS frames, not
-		// HTTP, so we must switch to a transparent byte tunnel or we'd break the
-		// agent (Codex's primary transport is wss://…/responses). We relay the
-		// handshake + tunnel the frames; we do NOT yet parse the (masked +
-		// permessage-deflate) frames, so a WS flow yields metadata only, not the
-		// prompt/tool payload. See relayWebSocket.
+		// WebSocket upgrade (RFC 6455): we can't usefully parse WS frames and a
+		// proxied 101 is rejected by strict clients. Reply 426 so the agent falls
+		// back to its HTTP endpoint, which we fully capture. See relayWebSocket.
 		if isWebSocketUpgrade(req) {
-			p.relayWebSocket(host, port, req, br, client)
+			p.relayWebSocket(host, req, client)
 			return
 		}
 
@@ -259,105 +256,29 @@ func tokenListContains(header, tok string) bool {
 	return false
 }
 
-// relayWebSocket handles a WebSocket flow on an inspected (TLS-terminated) host.
-// It records a metadata-only capture of the opening request, replays the
-// handshake to the real upstream over HTTP/1.1, and — once the upstream returns
-// 101 Switching Protocols — relays the upgraded connection as an opaque
-// bidirectional byte tunnel. The post-101 stream is WebSocket frames (masked,
-// possibly permessage-deflate compressed); we deliberately do NOT parse them, so
-// the agent keeps working even though we don't extract the prompt/tool payload.
+// relayWebSocket handles a WebSocket flow on an inspected (TLS-terminated) host
+// by asking the client to use HTTP instead — by replying 426 Upgrade Required.
 //
-// br is the buffered reader over the decrypted client conn — it may already hold
-// bytes the client sent after the handshake, so we drain it (not the raw conn)
-// into the upstream.
-func (p *Proxy) relayWebSocket(host, port string, req *http.Request, br *bufio.Reader, client net.Conn) {
-	// Metadata-only capture: we can't see the body/tools inside WS frames, but we
-	// can record that this runtime opened a provider WS to this path.
-	if p.OnCapture != nil {
-		p.OnCapture(Capture{
-			Host:     host,
-			Endpoint: wsEndpoint(host, req.URL.Path),
-			When:     time.Now(),
-		})
-	}
-	p.logger.Printf("[wire] %s %s -> websocket upgrade (tunneled, metadata only)", host, req.URL.Path)
-
-	// Dial upstream and replay the handshake byte-faithfully over HTTP/1.1.
-	dialer := &net.Dialer{Timeout: 15 * time.Second}
-	rawConn, err := dialer.Dial("tcp", net.JoinHostPort(host, port))
-	if err != nil {
-		writeBadGateway(client)
-		return
-	}
-	upTLS := p.upstreamTLS.Clone()
-	upTLS.ServerName = host
-	if len(upTLS.NextProtos) == 0 {
-		upTLS.NextProtos = []string{"http/1.1"} // RFC 6455 upgrade needs HTTP/1.1
-	}
-	up := tls.Client(rawConn, upTLS)
-	if err := up.Handshake(); err != nil {
-		rawConn.Close()
-		writeBadGateway(client)
-		return
-	}
-	defer up.Close()
-
-	outReq := req.Clone(req.Context())
-	outReq.URL.Scheme = "https"
-	outReq.URL.Host = host
-	outReq.Host = host
-	outReq.RequestURI = ""
-	if err := outReq.Write(up); err != nil {
-		writeBadGateway(client)
-		return
-	}
-
-	// Read the handshake response. Use a buffered reader; it may capture bytes the
-	// server sent immediately after the 101 (the first WS frames).
-	upBR := bufio.NewReader(up)
-	resp, err := http.ReadResponse(upBR, outReq)
-	if err != nil {
-		writeBadGateway(client)
-		return
-	}
-	// Relay the response headers to the client verbatim (the 101, or a non-101
-	// rejection like 426/401 which the client must see).
-	if err := resp.Write(client); err != nil {
-		resp.Body.Close()
-		return
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusSwitchingProtocols {
-		return // not upgraded; nothing more to tunnel
-	}
-
-	// Switch to an opaque bidirectional tunnel. CRUCIAL: drain the buffered bytes
-	// already pulled into br (client side) and upBR (server side) before raw
-	// copying, or we'd drop the first frames.
-	var once sync.Once
-	shutdown := func() { once.Do(func() { client.Close(); up.Close() }) }
-	done := make(chan struct{}, 1)
-	go func() { // client -> upstream
-		_, _ = io.Copy(up, br)
-		shutdown()
-		done <- struct{}{}
-	}()
-	_, _ = io.Copy(client, upBR) // upstream -> client
-	shutdown()
-	<-done
-}
-
-// wsEndpoint gives a stable logical name for a provider WebSocket flow, e.g.
-// "openai/responses (ws)" for OpenAI's /v1/responses WS endpoint.
-func wsEndpoint(host, path string) string {
-	switch {
-	case strings.Contains(host, "openai") && strings.Contains(path, "responses"):
-		return "openai/responses (ws)"
-	case strings.Contains(host, "anthropic"):
-		return "anthropic (ws)"
-	default:
-		return host + " (ws)"
-	}
+// Why not tunnel the WS? An opaque byte-tunnel of the post-101 frames keeps the
+// agent alive but yields ZERO payload visibility (frames are masked +
+// permessage-deflate compressed), and worse, real clients validate the upgrade
+// handshake: Codex's tungstenite rejects a proxied 101 as "Attack attempt
+// detected". The agents we care about (Codex's `wss://…/responses`) ALL fall
+// back to their HTTP endpoint on a 426 — which we fully TLS-terminate and parse
+// (system prompt + tools). So 426 turns an unparseable/fragile WS into a
+// fully-captured HTTP request. Verified against codex rust-v0.134.0:
+// client.rs:1402-1405 maps a 426 on the WS connect straight to FallbackToHttp
+// (no retry delay), and the subsequent /v1/responses HTTP request is captured in
+// full.
+func (p *Proxy) relayWebSocket(host string, req *http.Request, client net.Conn) {
+	p.logger.Printf("[wire] %s %s -> websocket upgrade; replying 426 so the client uses its capturable HTTP path", host, req.URL.Path)
+	// Minimal, well-formed 426 with Upgrade hints. Connection: close so the client
+	// doesn't try to reuse this leg for the HTTP fallback.
+	_, _ = io.WriteString(client,
+		"HTTP/1.1 426 Upgrade Required\r\n"+
+			"Connection: close\r\n"+
+			"Content-Length: 0\r\n"+
+			"\r\n")
 }
 
 // forward replays the request to the real upstream without touching any signed
