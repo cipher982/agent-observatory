@@ -3,6 +3,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @Environment(EngineClient.self) private var engine
+    @Environment(ProxyController.self) private var proxy
 
     let onExploreDemo: () -> Void
     let onUseLive: () -> Void
@@ -24,7 +25,51 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
-        .task { await engine.checkInstallStatus() }
+        .task {
+            await engine.checkInstallStatus()
+            proxy.refreshStatus()
+        }
+    }
+
+    // Live mode is only meaningful once the capture extension is actually running.
+    private var canContinueLive: Bool { engine.installReady && proxy.isActive }
+
+    private var proxyButtonTitle: String {
+        switch proxy.status {
+        case .active: return "Disable Capture"
+        case .activating: return "Enabling…"
+        default: return "Enable Live Capture"
+        }
+    }
+
+    private var proxyStepDetail: String {
+        switch proxy.status {
+        case .active: return "The system extension is approved and routing provider flows."
+        case .activating: return "Approve the system extension in System Settings when prompted."
+        case .needsApproval: return "Approve “Agent Observatory” in System Settings → General → Login Items & Extensions."
+        case .failed(let m): return m
+        default: return "Routes only provider flows to the local proxy; approve once in System Settings."
+        }
+    }
+
+    private var proxyStatusText: String {
+        switch proxy.status {
+        case .unknown: return "Capture extension status not checked yet."
+        case .inactive: return "Capture extension is off."
+        case .activating: return "Enabling capture — approve the system extension if macOS prompts you."
+        case .needsApproval: return "Waiting for approval in System Settings → General → Login Items & Extensions."
+        case .active: return "Capture extension is active. Provider flows route through Observatory."
+        case .failed(let m): return "Capture extension error: \(m)"
+        }
+    }
+
+    private var proxyStatusColor: Color {
+        switch proxy.status {
+        case .active: return .green
+        case .needsApproval, .activating: return .orange
+        case .failed: return .red
+        default: return .secondary
+        }
     }
 
     private var firstRunHero: some View {
@@ -156,6 +201,7 @@ struct OnboardingView: View {
                     ChecklistRow(done: true, title: "Start with demo evidence", detail: "You already saw the request stream working.")
                     ChecklistRow(done: true, title: "Understand the trust boundary", detail: "Only known LLM provider hosts are inspected; unrelated hosts tunnel opaque.")
                     ChecklistRow(done: engine.installReady, title: "Run the local install", detail: installStepDetail)
+                    ChecklistRow(done: proxy.isActive, title: "Enable the capture extension", detail: proxyStepDetail)
                 }
 
                 Text(engine.installStatusText)
@@ -187,19 +233,35 @@ struct OnboardingView: View {
                     HStack(spacing: 10) {
                         Button {
                             Task { await engine.checkInstallStatus() }
+                            proxy.refreshStatus()
                         } label: {
                             Label("Check Status", systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(.bordered)
 
+                        // Drive the NetworkExtension lifecycle. Enable triggers the
+                        // system-extension approval + login-keychain CA trust; once
+                        // active, the same button stops capture.
+                        Button {
+                            if proxy.isActive { proxy.deactivate() } else { proxy.activate() }
+                        } label: {
+                            Label(proxyButtonTitle, systemImage: proxy.isActive ? "stop.circle.fill" : "bolt.circle.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!engine.installReady || proxy.status == .activating)
+
                         Button {
                             onUseLive()
                         } label: {
-                            Label(engine.installReady ? "Continue Live" : "Install First", systemImage: "arrow.right.circle.fill")
+                            Label(canContinueLive ? "Continue Live" : "Enable First", systemImage: "arrow.right.circle.fill")
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(!engine.installReady)
+                        .disabled(!canContinueLive)
                     }
+
+                    Text(proxyStatusText)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(proxyStatusColor)
                 }
 
                 HStack(spacing: 10) {

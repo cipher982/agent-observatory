@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ObservatoryMenuBarView: View {
     @Environment(EngineClient.self) private var engine
+    @Environment(ProxyController.self) private var proxy
     @Environment(\.openWindow) private var openWindow
     @AppStorage("observatory.onboarding.completed") private var onboardingCompleted = false
     @AppStorage("observatory.onboarding.visible") private var onboardingVisible = true
@@ -17,6 +18,8 @@ struct ObservatoryMenuBarView: View {
 
         Text(engine.mode == .demo ? "Demo ready" : "Live capture")
         Text(engine.streamConnected ? "Connected" : "Reconnecting")
+
+        Text(proxy.isActive ? "Capture extension: on" : "Capture extension: off")
 
         Button(engine.mode == .demo ? "Switch to Live Mode" : "Switch to Demo Mode") {
             engine.restart(mode: engine.mode == .demo ? .live : .demo)

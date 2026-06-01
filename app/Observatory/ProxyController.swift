@@ -29,6 +29,34 @@ final class ProxyController: NSObject {
     private(set) var status: Status = .unknown
     private let extensionBundleID = "com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension"
 
+    var isActive: Bool { status == .active }
+
+    // Reflect the current transparent-proxy state into `status` on launch, so the
+    // UI shows "active" when capture is already running from a previous session
+    // (the system extension and its config persist across app launches).
+    func refreshStatus() {
+        let bundleID = extensionBundleID
+        NETransparentProxyManager.loadAllFromPreferences { managers, _ in
+            let ours = managers?.first {
+                ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleID
+            }
+            Task { @MainActor in
+                switch ours?.connection.status {
+                case .connected:
+                    self.status = .active
+                case .connecting, .reasserting:
+                    self.status = .activating
+                case .disconnecting, .disconnected, .invalid, .none:
+                    if self.status != .needsApproval && self.status != .activating {
+                        self.status = .inactive
+                    }
+                @unknown default:
+                    break
+                }
+            }
+        }
+    }
+
     // MARK: System extension activation
 
     // The NE relay forwards allowlisted flows to the Go proxy on 127.0.0.1:7879,
