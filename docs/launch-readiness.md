@@ -94,8 +94,8 @@ curl --cacert ~/.local/state/agent-observatory/ca/observatory-ca.pem \
 
 | # | Criterion | Status | Evidence / note |
 |---|-----------|--------|----------------|
-| A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ | notarytool Accepted; app + DMG stapled; `spctl -a -vvv` → "accepted / source=Notarized Developer ID" |
-| A2 | In /Applications, sysext `activated enabled` | ✅ | After approval, `systemextensionsctl list` shows `[activated enabled]`; provider process running |
+| A1 | Notarized (stapled, `spctl -a -vvv` passes) | ⚠️ current HEAD pending | Earlier notarized artifacts existed, but a fresh `make release` from current HEAD is signed only: app reports `Unnotarized Developer ID`, DMG has no stapled ticket. New release flow is `make release` → `NOTARY_PROFILE=… make notarize` → `make release-qa`, and strict QA now fails if either app or DMG lacks a stapled ticket. |
+| A2 | In /Applications, sysext `activated enabled` | ⚠️ current host dirty | Historical evidence showed `[activated enabled]`, but current state has old Observatory extension versions waiting to uninstall on reboot and `0.1.0/4` as `[activated waiting for user]`; `/Applications/.../agents status` reports not installed. v0.2 gate requires a clean reboot/install/approval pass. |
 | B3 | Live capture of a real agent, captured AND agent completes | ⚠️ partial | Capture/parse PROVEN on real bodies; forward path now PROVEN via dev-scoped harness (real 401/405, not 502 — loop fixed). Still TODO: a full real HTTP-path agent (Claude Code) run that captures AND completes end-to-end. |
 | B4 | Unrelated traffic untouched | ✅ | While active, `example.com:443` kept its real **Cloudflare** cert (not Observatory CA), plain HTTP 200, **0 captures** during unrelated traffic; only `api.openai.com` presented the Observatory CA. |
 | B5 | Fail-open + stability | ✅ | Stopping the daemon reverted providers to real certs (NE fail-open → agents keep working — verified repeatedly). Client CA-reject → `clientTLSFailures` on `/healthz` → app warns. SNI fragmentation tests pass. |

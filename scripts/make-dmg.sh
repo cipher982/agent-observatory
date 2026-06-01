@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# Build a polished macOS drag-install DMG with a branded Finder background.
+# Build a macOS drag-install DMG.
+#
+# Default mode is headless: it never runs Finder AppleScript, so release builds
+# do not steal GUI focus. Set DMG_STYLE=polished for the old Finder-prettified
+# layout (custom background/icon positions), which is intentionally explicit.
 set -euo pipefail
 
 APP_PATH="${1:?app bundle path required}"
 OUT_DMG="${2:?output dmg path required}"
 VOL_NAME="${3:-Agent Observatory}"
+DMG_STYLE="${DMG_STYLE:-headless}" # headless | polished
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_BUNDLE_NAME="$(basename "$APP_PATH")"
@@ -14,6 +19,11 @@ FONT_BOLD="/System/Library/Fonts/SFNS.ttf"
 
 command -v magick >/dev/null || { echo "make-dmg: ImageMagick 'magick' is required" >&2; exit 1; }
 command -v create-dmg >/dev/null || { echo "make-dmg: create-dmg is required (brew install create-dmg)" >&2; exit 1; }
+
+case "$DMG_STYLE" in
+  headless|polished) ;;
+  *) echo "make-dmg: DMG_STYLE must be headless or polished (got $DMG_STYLE)" >&2; exit 2 ;;
+esac
 
 tmp="$(mktemp -d)"
 staging="$tmp/staging"
@@ -48,8 +58,20 @@ magick -size 760x480 canvas:'#111827' \
   -fill '#cbd5e1' -font "$FONT_REGULAR" -pointsize 13 -gravity north -annotate +0+405 'Live capture is optional and set up inside the app' \
   "$bg"
 
+extra_args=(--hdiutil-quiet)
+if [ "$DMG_STYLE" = "headless" ]; then
+  # create-dmg's Finder-prettifying AppleScript is the focus-stealing step. Skip
+  # it by default; the DMG remains valid, mountable, signed/notarizable, and keeps
+  # the Applications symlink, but without custom Finder window metadata.
+  extra_args+=(--skip-jenkins)
+fi
+if [ -n "${DMG_CODESIGN_IDENTITY:-}" ]; then
+  extra_args+=(--codesign "$DMG_CODESIGN_IDENTITY")
+fi
+
 rm -f "$OUT_DMG"
 create-dmg \
+  "${extra_args[@]}" \
   --volname "$VOL_NAME" \
   --background "$bg" \
   --window-pos 100 100 \
@@ -65,4 +87,4 @@ create-dmg \
   "$OUT_DMG" \
   "$staging" >/dev/null
 
-echo "created: $OUT_DMG"
+echo "created ($DMG_STYLE): $OUT_DMG"

@@ -334,10 +334,33 @@ Artifacts are written to `dist/`:
 - `agents`
 - `SHA256SUMS`
 
+`make release` is intentionally **headless**: it builds the signed app, zip,
+DMG, and checksums without running Finder AppleScript, so it does not steal GUI
+focus during local QA. The DMG is functional but plain by default. If you
+explicitly want Finder window background/icon positioning, run:
+
+```bash
+DMG_STYLE=polished make release-polished
+```
+
+That polished path uses Finder layout metadata and can bring a Finder window to
+the foreground.
+
+For public distribution, notarize and staple the app and DMG after `make release`:
+
+```bash
+NOTARY_PROFILE=<notarytool-keychain-profile> make notarize
+make release-qa
+make v02-readiness
+```
+
 The DMG is the primary user-facing artifact. It contains
 **Agent Observatory.app** and an **Applications** symlink for the normal macOS
-drag-install flow. The zip is a fallback. The release build is Developer ID
-signed and notarized.
+drag-install flow. The zip is a fallback. The public release build is Developer
+ID signed and notarized.
+
+Security notes for the local CA, prompt-data handling, and vulnerability reports
+are in [SECURITY.md](SECURITY.md).
 
 ## Current Limitations
 
@@ -395,7 +418,11 @@ Scope:
 make backend-qa
 make app-build
 make release
-bash scripts/release-qa.sh
+make release-layout-qa
+NOTARY_PROFILE=<notarytool-keychain-profile> make notarize
+make release-qa
 ```
 
-Detailed release and planning notes live under `docs/`.
+Detailed release and planning notes live under `docs/`, including
+[`docs/v0.2-readiness.md`](docs/v0.2-readiness.md) and
+[`docs/ne-reset-runbook.md`](docs/ne-reset-runbook.md).

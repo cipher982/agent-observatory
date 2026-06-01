@@ -1,8 +1,10 @@
-.PHONY: qa backend-qa app-project app-build release release-qa release-open clean
+.PHONY: qa backend-qa app-project app-build release release-polished notarize release-layout-qa release-qa v02-readiness release-open clean
 
 VERSION ?= 0.1.0
 DERIVED_DATA ?= /tmp/observatory-dd
 APP_CONFIGURATION ?= Debug
+DMG_STYLE ?= headless
+NOTARY_PROFILE ?=
 APP_NAME := Agent Observatory
 APP_PROJECT := app/Observatory.xcodeproj
 APP_BUNDLE = $(DERIVED_DATA)/Build/Products/$(APP_CONFIGURATION)/$(APP_NAME).app
@@ -29,7 +31,7 @@ release: qa
 	cp -R "$(APP_BUNDLE)" "$(RELEASE_APP)"
 	test -x "$(RELEASE_APP)/Contents/Resources/agents"
 	cp "$(RELEASE_APP)/Contents/Resources/agents" dist/agents
-	scripts/make-dmg.sh "$(RELEASE_APP)" "dist/$(RELEASE_DMG)" "$(APP_NAME)"
+	DMG_STYLE="$(DMG_STYLE)" scripts/make-dmg.sh "$(RELEASE_APP)" "dist/$(RELEASE_DMG)" "$(APP_NAME)"
 	cd dist && ditto -c -k --keepParent "$(APP_NAME).app" "$(RELEASE_ZIP)"
 	cd dist && shasum -a 256 "$(RELEASE_DMG)" "$(RELEASE_ZIP)" agents > SHA256SUMS
 	@echo "release artifacts written to dist/"
@@ -37,8 +39,21 @@ release: qa
 	@echo "  dist/$(RELEASE_ZIP)"
 	@echo "  dist/agents"
 
-release-qa: release
+release-polished: DMG_STYLE = polished
+release-polished: release
+
+notarize:
+	test -n "$(NOTARY_PROFILE)" || { echo "set NOTARY_PROFILE=<notarytool keychain profile>"; exit 2; }
+	NOTARY_PROFILE="$(NOTARY_PROFILE)" DMG_STYLE="$(DMG_STYLE)" scripts/notarize-release.sh
+
+release-layout-qa:
 	bash scripts/release-qa.sh
+
+release-qa:
+	bash scripts/release-qa.sh --notarized
+
+v02-readiness:
+	bash scripts/v02-readiness-check.sh
 
 release-open: release
 	open "$(RELEASE_APP)"

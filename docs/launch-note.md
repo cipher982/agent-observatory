@@ -28,12 +28,12 @@ What is included:
   model, localhost API, SSE stream, and a TLS-terminating capture proxy.
 - NetworkExtension transparent proxy for routing only provider flows.
 - Install/status/uninstall flow for ambient capture, with login-keychain CA trust.
-- DMG release build and QA commands.
+- Developer ID signed/notarized DMG release flow, plus QA commands.
 
 What is not included yet:
 
 - Hosted/team observability.
-- Developer ID notarization or App Store distribution.
+- App Store distribution.
 - Canonical context management across every runtime.
 
 Repo: https://github.com/cipher982/agent-observatory
@@ -41,7 +41,3 @@ Repo: https://github.com/cipher982/agent-observatory
 The project is meant to be the missing inspector/debugger for agent context. I
 would especially like feedback on the install-once capture model, the local MITM
 security framing, and which agent runtimes should be hardened first.
-
-Distribution note: the v0.1 app is ad-hoc signed. The README tells downloaders
-to approve the first launch through System Settings → Privacy & Security → Open
-Anyway, or use the `xattr -dr com.apple.quarantine` fallback.
