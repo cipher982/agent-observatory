@@ -7,7 +7,7 @@
 
 ## Verdict
 
-**NO-GO until the host system-extension state is clean, a real Claude Code run both captures and completes, and the v0.2.0 release is published or staged. Do not post yet.**
+**NO-GO until the host system-extension state is clean and a real Claude Code run both captures and completes. The v0.2.0 GitHub release is staged as a draft, not published. Do not post yet.**
 
 > Correction (2026-06-01): an earlier draft of this doc said GO. That was WRONG.
 > It declared B3 "proven" because a capture event appeared in the live feed —

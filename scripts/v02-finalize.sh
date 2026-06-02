@@ -119,15 +119,24 @@ if [ "$run_publish" -eq 1 ]; then
   require_path dist/agents
   require_path dist/SHA256SUMS
   make release-qa
-  gh release create v0.2.0 \
-    --repo cipher982/agent-observatory \
-    --target "$(git rev-parse HEAD)" \
-    --title "Agent Observatory v0.2.0" \
-    --notes-file docs/release-v0.2-draft.md \
-    "$DMG" \
-    "$ZIP" \
-    dist/agents \
-    dist/SHA256SUMS
+  if gh release view v0.2.0 --repo cipher982/agent-observatory >/dev/null 2>&1; then
+    gh release edit v0.2.0 \
+      --repo cipher982/agent-observatory \
+      --target "$(git rev-parse HEAD)" \
+      --title "Agent Observatory v0.2.0" \
+      --notes-file docs/release-v0.2-draft.md \
+      --draft=false
+  else
+    gh release create v0.2.0 \
+      --repo cipher982/agent-observatory \
+      --target "$(git rev-parse HEAD)" \
+      --title "Agent Observatory v0.2.0" \
+      --notes-file docs/release-v0.2-draft.md \
+      "$DMG" \
+      "$ZIP" \
+      dist/agents \
+      dist/SHA256SUMS
+  fi
 fi
 
 status_snapshot

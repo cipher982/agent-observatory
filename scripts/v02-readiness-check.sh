@@ -171,7 +171,7 @@ else
 fi
 
 if have gh; then
-  v02_json="$(gh release view v0.2.0 --repo cipher982/agent-observatory --json name,assets 2>/dev/null || true)"
+  v02_json="$(gh release view v0.2.0 --repo cipher982/agent-observatory --json name,assets,isDraft,targetCommitish,tagName 2>/dev/null || true)"
   if [ -z "$v02_json" ]; then
     bad "v0.2.0 release does not exist"
   else
@@ -182,11 +182,28 @@ if have gh; then
       bad "v0.2.0 release name does not use Agent Observatory"
     fi
 
-    tag_sha="$(git ls-remote origin "refs/tags/v0.2.0^{}" "refs/tags/v0.2.0" 2>/dev/null | awk 'END {print $1}')"
-    if [ -n "$tag_sha" ] && [ "$tag_sha" = "$head_sha" ]; then
-      ok "v0.2.0 tag points at current commit"
+    release_is_draft="$(gh release view v0.2.0 --repo cipher982/agent-observatory --json isDraft --jq '.isDraft' 2>/dev/null || true)"
+    release_target="$(gh release view v0.2.0 --repo cipher982/agent-observatory --json targetCommitish --jq '.targetCommitish' 2>/dev/null || true)"
+    if [ "$release_is_draft" = "true" ]; then
+      resolved_target="$(git rev-parse "$release_target" 2>/dev/null || true)"
+      if [ "$release_target" = "$head_sha" ] || [ "$resolved_target" = "$head_sha" ]; then
+        ok "v0.2.0 draft release targets current commit"
+      else
+        bad "v0.2.0 draft release does not target current commit"
+      fi
     else
-      bad "v0.2.0 tag does not point at current commit"
+      tag_sha="$(git ls-remote origin "refs/tags/v0.2.0^{}" "refs/tags/v0.2.0" 2>/dev/null | awk 'END {print $1}')"
+      if [ -n "$tag_sha" ] && [ "$tag_sha" = "$head_sha" ]; then
+        ok "v0.2.0 tag points at current commit"
+      else
+        bad "v0.2.0 tag does not point at current commit"
+      fi
+    fi
+
+    if [ "$release_is_draft" = "true" ]; then
+      note "v0.2.0 release is staged as a draft, not published"
+    else
+      ok "v0.2.0 release is published"
     fi
 
     if [ -f "$DIST/SHA256SUMS" ]; then

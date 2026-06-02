@@ -48,11 +48,18 @@ already-published stale `v0.1.0` release and makes the fixed capture pipeline
 milestone clear. `make v02-readiness` requires a `v0.2.0` release whose tag and
 asset digests match the local final artifacts.
 
+For pre-publication staging, create the release as a **draft** with the same
+assets. GitHub draft releases may show asset URLs under an `untagged-*` slug
+until publication; that is normal. The readiness audit accepts a draft only when
+its target commit and asset digests match the local final state.
+
 ## 4. Create v0.2.0
 
 ```bash
 gh release create v0.2.0 \
   --repo cipher982/agent-observatory \
+  --draft \
+  --latest=false \
   --target "$(git rev-parse HEAD)" \
   --title "Agent Observatory v0.2.0" \
   --notes-file docs/release-v0.2-draft.md \
@@ -69,6 +76,17 @@ Equivalent guarded helper:
 
 ```bash
 CONFIRM_PUBLISH_V02=1 scripts/v02-finalize.sh --publish
+```
+
+When the final live proof is recorded, retarget the draft to the final commit if
+needed, refresh the notes, then publish:
+
+```bash
+gh release edit v0.2.0 \
+  --repo cipher982/agent-observatory \
+  --target "$(git rev-parse HEAD)" \
+  --notes-file docs/release-v0.2-draft.md \
+  --draft=false
 ```
 
 ## 5. Verify Publication
