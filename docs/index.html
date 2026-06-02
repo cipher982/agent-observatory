@@ -84,12 +84,6 @@
       font-weight: 700;
     }
 
-    .brand img {
-      width: 30px;
-      height: 30px;
-      border-radius: 7px;
-    }
-
     .nav-links {
       display: flex;
       gap: 18px;
@@ -281,19 +275,18 @@
     <div class="hero-inner">
       <nav>
         <div class="brand">
-          <img src="../app/Observatory/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" alt="">
           <span>Agent Observatory</span>
         </div>
         <div class="nav-links">
           <a href="https://github.com/cipher982/agent-observatory">GitHub</a>
-          <a href="https://github.com/cipher982/agent-observatory/releases">Download</a>
+          <a href="https://github.com/cipher982/agent-observatory/releases/tag/v0.2.0">Download</a>
         </div>
       </nav>
 
       <h1>See what your coding agents actually received.</h1>
       <p class="lede">A local-first macOS app for inspecting agent instructions, available tools, transcript evidence, and verified outbound LLM request facts.</p>
       <div class="actions">
-        <a class="button primary" href="https://github.com/cipher982/agent-observatory/releases">Download for macOS</a>
+        <a class="button primary" href="https://github.com/cipher982/agent-observatory/releases/tag/v0.2.0">Download for macOS</a>
         <a class="button" href="https://github.com/cipher982/agent-observatory">Read the README</a>
       </div>
       <div class="proof">
@@ -361,10 +354,10 @@
     </section>
 
     <section>
-      <h2>Launch status</h2>
+      <h2>Release posture</h2>
       <div class="flow">
         <div class="note">
-          <p>The v0.2 line is signed, notarized, and passing local release QA. The remaining public-launch gate is a final real Claude Code completion proof on the launch machine before publishing the GitHub release.</p>
+          <p>The v0.2 Mac release is Developer ID signed, notarized, stapled, and checked by strict local release QA before publication. The app opens in demo mode first; live capture is an explicit second step.</p>
         </div>
         <div class="note risk">
           <p>Current limitations: macOS 26 preview app, HTTP/3 is not captured, ECH fails open, already-running agents need a restart, and session-to-capture correlation is coarse.</p>
