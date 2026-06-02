@@ -21,10 +21,10 @@ struct ObservatoryMenuBarView: View {
 
         Text(proxy.isActive ? "Capture extension: on" : "Capture extension: off")
 
-        // Always-available capture kill switch / enable. This is the reliable way
-        // to turn capture OFF (deactivates the system extension + removes CA trust)
-        // no matter what screen the app is on — so capture can never silently
-        // linger and break a freshly launched agent.
+        // Always-available capture kill switch / enable. This stops the
+        // transparent-proxy tunnel and removes CA trust without uninstalling the
+        // approved system extension, so users can turn capture back on without a
+        // reboot.
         Button(proxy.isActive ? "Disable Live Capture" : "Enable Live Capture") {
             if proxy.isActive {
                 proxy.deactivate()

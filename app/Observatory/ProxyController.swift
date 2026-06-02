@@ -7,8 +7,8 @@ import os
 private let log = Logger(subsystem: "com.github.cipher982.agentobservatory", category: "proxyctl")
 
 // ProxyController owns the NetworkExtension lifecycle from the host app side:
-// activate/deactivate the system extension (OSSystemExtensionRequest) and
-// load/save/start the transparent-proxy configuration (NETransparentProxyManager).
+// activate the system extension (OSSystemExtensionRequest), then load/save/start
+// or stop the transparent-proxy configuration (NETransparentProxyManager).
 //
 // This is the NE capture ingress — it replaces the global HTTPS_PROXY env-var
 // install. The system extension routes only allowlisted provider flows to the
@@ -97,16 +97,21 @@ final class ProxyController: NSObject {
     }
 
     func deactivate() {
-        let req = OSSystemExtensionRequest.deactivationRequest(
-            forExtensionWithIdentifier: extensionBundleID, queue: .main)
-        req.delegate = self
-        OSSystemExtensionManager.shared.submitRequest(req)
-        // Stop the tunnel FIRST, then remove CA trust — otherwise there's a window
-        // where the proxy is still intercepting but agents no longer trust its CA,
-        // which would fail their TLS handshakes instead of cleanly passing through.
+        // Disable live capture without uninstalling the System Extension. Asking
+        // sysextd to deactivate the extension leaves macOS in a
+        // "terminated waiting to uninstall on reboot" state, which makes the
+        // normal off/on loop feel broken. The safe user-facing kill switch is:
+        // stop the transparent-proxy tunnel, then remove CA trust. The approved
+        // extension remains installed and can be started again without reboot.
+        //
+        // Stop the tunnel FIRST, then remove CA trust — otherwise there's a
+        // window where the proxy is still intercepting but agents no longer
+        // trust its CA, which would fail their TLS handshakes instead of
+        // cleanly passing through.
         Task {
             await stopTunnel()
             await self.removeCATrust()
+            self.status = .inactive
         }
     }
 

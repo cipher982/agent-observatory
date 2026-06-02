@@ -7,7 +7,7 @@
 
 ## Verdict
 
-**NO-GO until a real Claude Code run both captures and completes. Do not post yet.**
+**NO-GO until the no-reboot disable fix is rebuilt/notarized and a real Claude Code run both captures and completes. Do not post yet.**
 
 > Correction (2026-06-01): an earlier draft of this doc said GO. That was WRONG.
 > It declared B3 "proven" because a capture event appeared in the live feed —
@@ -61,6 +61,10 @@
   **Claude Code** (HTTP-path) turn under live NE capture and confirm it both
   captures AND completes. Current v0.2 global capture emits real Claude Code
   `api.anthropic.com` events, but the local CLI exits 401 before completion.
+- **New fix required:** the old Disable Capture path deactivated the System
+  Extension, leaving macOS in `terminated waiting to uninstall on reboot`.
+  Current source changes Disable to stop only the transparent-proxy tunnel and
+  remove CA trust, so users can turn capture back on without a reboot.
 - Codex is SUPPORTED (426 → HTTP fallback, fully captured); no longer scoped out.
 
 The caveats a poster must own regardless (in README Known Limitations): per-runtime
@@ -95,12 +99,12 @@ curl --cacert ~/.local/state/agent-observatory/ca/observatory-ca.pem \
 
 | # | Criterion | Status | Evidence / note |
 |---|-----------|--------|----------------|
-| A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ current HEAD artifacts pass | Fresh `make release` artifacts from current HEAD were notarized/stapled with `NOTARY_PROFILE=AO_NOTARY`; `make release-qa` passes for both the app and DMG. DMG assessment uses Apple's disk-image form: `spctl -a -t open --context context:primary-signature`. |
-| A2 | In /Applications, sysext `activated enabled` | ✅ current host clean | The v0.2 app is installed in `/Applications`, matches `dist/`, `/Applications/.../agents status` reports `overall: installed`, daemon `/healthz` responds, the current local CA is trusted in the login keychain, and `systemextensionsctl` shows exactly `0.2.0/5` as `[activated enabled]`. |
+| A1 | Notarized (stapled, `spctl -a -vvv` passes) | ⚠️ rebuild needed | Earlier v0.2 artifacts were notarized/stapled and passed `make release-qa`, but the source now includes the no-reboot Disable Capture fix. Rebuild/notarize before publishing. |
+| A2 | In /Applications, sysext `activated enabled` | ⚠️ host needs reboot after old disable path | The v0.2 app/daemon/CA were previously clean and enabled. Testing the old Disable action intentionally deactivated the sysext and macOS now reports `0.2.0/5` `terminated waiting to uninstall on reboot`. Reboot, install the fixed build, then approve/start capture again. |
 | B3 | Live capture of a real agent, captured AND agent completes | ⚠️ partial | Current v0.2 live NE capture emits real Claude Code requests (`api.anthropic.com`, `anthropic/messages`, ~27k system chars, 11 tools) and controlled Anthropic probes forward to real upstream 401s. Still TODO: local Claude auth must be repaired so a real Claude Code turn completes normally while captured. |
 | B4 | Unrelated traffic untouched | ✅ | While active, `example.com:443` kept its real **Cloudflare** cert (not Observatory CA), plain HTTP 200, **0 captures** during unrelated traffic; only `api.openai.com` presented the Observatory CA. |
 | B5 | Fail-open + stability | ✅ | Stopping the daemon reverted providers to real certs (NE fail-open → agents keep working — verified repeatedly). Client CA-reject → `clientTLSFailures` on `/healthz` → app warns. SNI fragmentation tests pass. |
-| C6 | Uninstall fully reverses | 🟡 mostly | `agents uninstall`: daemon gone, **0** trusted CAs (hash sweep verified 2→0), state dir/env/plist gone, all hosts back on real certs. Gap: the CLI can't deactivate the system extension (it fails open without the daemon; a menu-bar **Disable Live Capture** kill switch now deactivates it from the app). |
+| C6 | Disable/uninstall reverses | ⚠️ fix pending rebuild | `agents uninstall` cleans daemon/state/env/keychain trust. The app Disable action now stops the tunnel and removes CA trust without deactivating the sysext, avoiding the prior reboot-required off/on loop. Needs rebuilt/notarized artifact verification. |
 | — | Routing loop fixed | ✅ verified live | `handleNewFlow` bypasses the daemon's own upstream flows; proven on-host via dev-scoped harness (real 401/405, no loop). |
 | — | Codex (WebSocket) capture | ✅ via 426→HTTP fallback | Proxy replies 426 to provider WS upgrades; Codex falls back to HTTP instantly and is fully captured (43k sys chars, 22 tools). Verified via explicit-proxy isolation; shared NE routing path is now active for provider flows. |
 | — | Safe on-host iteration | ✅ | dev-scope allowlist (`/tmp/agent-observatory-dev-scope`) + signed `devharness` + menu kill switch; lets us test the real kernel path without a VM or risking host agents. See `docs/scoped-capture-dev.md`. |
