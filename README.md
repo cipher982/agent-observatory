@@ -35,9 +35,9 @@ The intended first-run experience is the native app:
 3. Open **Agent Observatory.app** from Applications.
 4. Start with the built-in demo feed. No account, proxy, or trust setup is
    required to see the product surface.
-5. When ready, use the app's onboarding panel to copy the live-capture install
-   command. The command uses the helper bundled inside the app, so no separate
-   `agents` CLI install is required first.
+5. When ready, use the app's onboarding panel to turn on live capture. The app
+   walks through the local engine install, macOS NetworkExtension approval, and
+   login-keychain trust step.
 
 The native app currently targets the macOS 26 preview because it uses the new
 Liquid Glass SwiftUI surface. Public release artifacts are Developer ID signed,
@@ -46,12 +46,13 @@ publication.
 
 ### Enabling live capture
 
-Live capture installs a macOS **system extension** (NetworkExtension transparent
-proxy). On first enable, macOS asks you to approve it in **System Settings →
-General → Login Items & Extensions → Network Extensions**, then prompts once to
-trust the local CA in your login keychain. Approve both and capture starts
-immediately. (System extensions only activate from **/Applications**, so install
-the app there first.)
+Live capture has two explicit steps: install the local engine, then enable the
+macOS **system extension** (NetworkExtension transparent proxy). On first enable,
+macOS asks you to approve Agent Observatory in **System Settings → General →
+Login Items & Extensions → Network Extensions**, then the app trusts the local CA
+in your login keychain. Approve both, restart any already-running agent shells,
+and newly launched Claude/Codex sessions are captured normally. (System
+extensions only activate from **/Applications**, so install the app there first.)
 
 No Xcode required for the backend-only smoke test. Requires Go 1.26:
 

@@ -1,13 +1,13 @@
 # Agent Observatory — Launch Readiness
 
-> Go/no-go for a public (HackerNews) launch of v0.1.0.
+> Go/no-go for a public (HackerNews) launch of v0.2.0.
 > Method: full re-audit of the tree against `LAUNCH-AUDIT.md`, two independent
 > hatch-codex (gpt-5.5) first-principles reviews, fixes + regression tests,
 > then live validation on this Mac. Evidence for criteria 3–6 is captured below.
 
 ## Verdict
 
-**NO-GO until the live capture path is re-verified in isolation. Do not post yet.**
+**NO-GO until a real Claude Code run both captures and completes. Do not post yet.**
 
 > Correction (2026-06-01): an earlier draft of this doc said GO. That was WRONG.
 > It declared B3 "proven" because a capture event appeared in the live feed —
@@ -57,9 +57,10 @@
 - **DONE:** the routing-loop fix is verified live (dev-scoped harness → real
   provider 401/405, no loop). No VM needed — `docs/scoped-capture-dev.md` shows
   the safe on-host method.
-- **Remaining:** run a real **Claude Code** (HTTP-path) agent under dev-scope and
-  confirm it both captures AND completes its turn (the harness proves the forward;
-  this proves a real agent's full round-trip). Then decide global enablement.
+- **Remaining:** repair local Claude Code authentication, then run a real
+  **Claude Code** (HTTP-path) turn under live NE capture and confirm it both
+  captures AND completes. Current v0.2 global capture emits real Claude Code
+  `api.anthropic.com` events, but the local CLI exits 401 before completion.
 - Codex is SUPPORTED (426 → HTTP fallback, fully captured); no longer scoped out.
 
 The caveats a poster must own regardless (in README Known Limitations): per-runtime
@@ -95,13 +96,13 @@ curl --cacert ~/.local/state/agent-observatory/ca/observatory-ca.pem \
 | # | Criterion | Status | Evidence / note |
 |---|-----------|--------|----------------|
 | A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ current HEAD artifacts pass | Fresh `make release` artifacts from current HEAD were notarized/stapled with `NOTARY_PROFILE=AO_NOTARY`; `make release-qa` passes for both the app and DMG. DMG assessment uses Apple's disk-image form: `spctl -a -t open --context context:primary-signature`. |
-| A2 | In /Applications, sysext `activated enabled` | ⚠️ current host dirty | The v0.2 app is now installed in `/Applications`, matches `dist/`, `/Applications/.../agents status` reports `overall: installed`, daemon `/healthz` responds, and the current local CA is trusted in the login keychain. System-extension state is still dirty: old `0.1.0/1` and `0.1.0/3` entries are waiting to uninstall on reboot, and `0.1.0/4` is still `[activated waiting for user]`. v0.2 gate requires reboot/approval so exactly the current `0.2.0/5` extension is `[activated enabled]`. |
-| B3 | Live capture of a real agent, captured AND agent completes | ⚠️ partial | Capture/parse PROVEN on real bodies; forward path now PROVEN via dev-scoped harness (real 401/405, not 502 — loop fixed). Still TODO: a full real HTTP-path agent (Claude Code) run that captures AND completes end-to-end. |
+| A2 | In /Applications, sysext `activated enabled` | ✅ current host clean | The v0.2 app is installed in `/Applications`, matches `dist/`, `/Applications/.../agents status` reports `overall: installed`, daemon `/healthz` responds, the current local CA is trusted in the login keychain, and `systemextensionsctl` shows exactly `0.2.0/5` as `[activated enabled]`. |
+| B3 | Live capture of a real agent, captured AND agent completes | ⚠️ partial | Current v0.2 live NE capture emits real Claude Code requests (`api.anthropic.com`, `anthropic/messages`, ~27k system chars, 11 tools) and controlled Anthropic probes forward to real upstream 401s. Still TODO: local Claude auth must be repaired so a real Claude Code turn completes normally while captured. |
 | B4 | Unrelated traffic untouched | ✅ | While active, `example.com:443` kept its real **Cloudflare** cert (not Observatory CA), plain HTTP 200, **0 captures** during unrelated traffic; only `api.openai.com` presented the Observatory CA. |
 | B5 | Fail-open + stability | ✅ | Stopping the daemon reverted providers to real certs (NE fail-open → agents keep working — verified repeatedly). Client CA-reject → `clientTLSFailures` on `/healthz` → app warns. SNI fragmentation tests pass. |
 | C6 | Uninstall fully reverses | 🟡 mostly | `agents uninstall`: daemon gone, **0** trusted CAs (hash sweep verified 2→0), state dir/env/plist gone, all hosts back on real certs. Gap: the CLI can't deactivate the system extension (it fails open without the daemon; a menu-bar **Disable Live Capture** kill switch now deactivates it from the app). |
 | — | Routing loop fixed | ✅ verified live | `handleNewFlow` bypasses the daemon's own upstream flows; proven on-host via dev-scoped harness (real 401/405, no loop). |
-| — | Codex (WebSocket) capture | ✅ via 426→HTTP fallback | Proxy replies 426 to provider WS upgrades; Codex falls back to HTTP instantly and is fully captured (43k sys chars, 22 tools). Verified via explicit-proxy isolation; NE-path verification pending (shared Go code). |
+| — | Codex (WebSocket) capture | ✅ via 426→HTTP fallback | Proxy replies 426 to provider WS upgrades; Codex falls back to HTTP instantly and is fully captured (43k sys chars, 22 tools). Verified via explicit-proxy isolation; shared NE routing path is now active for provider flows. |
 | — | Safe on-host iteration | ✅ | dev-scope allowlist (`/tmp/agent-observatory-dev-scope`) + signed `devharness` + menu kill switch; lets us test the real kernel path without a VM or risking host agents. See `docs/scoped-capture-dev.md`. |
 | D7 | Launch-blocker sweep: every original-audit P0/P1 fixed | ✅ | sweep table below (the routing loop was a NEW P0 found later by live testing) |
 | D8 | README/onboarding match shipped NE reality | ✅ | NE-first copy across README, onboarding, doctor, launch-note; Codex supported via 426→HTTP |
@@ -157,19 +158,24 @@ xcodebuild -project app/Observatory.xcodeproj -scheme ObservatoryTests \
 
 ## Live validation evidence (criteria 3–6)
 
-Captured on this Mac (macOS 26, 2026-06-01) with the notarized v0.1.0 build.
+Captured on this Mac (macOS 26, 2026-06-02) with the notarized v0.2.0 build.
 
 **A2 — extension activated:**
 ```
 $ systemextensionsctl list | grep agentobservatory
-*	*	M49WM6JSW8	com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension (0.1.0/1)	Agent Observatory Proxy	[activated enabled]
+*	*	M49WM6JSW8	com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension (0.2.0/5)	Agent Observatory Proxy	[activated enabled]
 ```
 
 **B3 — live capture (SSE feed):**
 ```
 {"type":"capture","host":"api.openai.com","endpoint":"openai/chat.completions","runtime":"codex","systemChars":41,"parsed":true,"toolCount":1,"toolNames":["mcp__launch__verify"]}
 {"type":"capture","host":"api.anthropic.com","endpoint":"anthropic/messages","runtime":"claude","systemChars":42,"parsed":true,"toolCount":2,"toolNames":["mcp__launch__verify","Bash"]}
+{"type":"capture","host":"api.anthropic.com","endpoint":"anthropic/messages","runtime":"claude","systemChars":27281,"parsed":true,"toolCount":11,"toolNames":["Agent","AskUserQuestion","Bash","Edit","Glob","Grep","Read","ScheduleWakeup","Skill","ToolSearch","Write"],"at":"2026-06-02T13:35:12-04:00"}
 ```
+
+The 2026-06-02 capture above came from real Claude Code CLI requests through the
+approved v0.2 NetworkExtension. The CLI returned `401 Invalid authentication
+credentials`, so this proves capture/routing but not completion.
 
 **B4 — unrelated untouched (cert issuer contrast, capture active):**
 ```

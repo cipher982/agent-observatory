@@ -32,6 +32,8 @@ public artifacts.
 - macOS 26 preview and Xcode 26 for the native app.
 - Claude Code: observed transcript support; verified capture through the
   NetworkExtension/proxy path after the agent is restarted to inherit trust.
+  Current launch-machine note: live capture is proven, but the final
+  capture-and-complete proof is pending because local Claude auth returns 401.
 - Codex: observed transcript support and verified capture via HTTP fallback from
   its WebSocket responses transport.
 - Antigravity: discovery-only when conversation bodies are opaque `.pb` files.

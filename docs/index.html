@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Observatory</title>
+  <meta name="description" content="A local-first macOS app for seeing what coding agents actually received: instructions, tools, transcripts, and verified outbound LLM request facts.">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f14;
+      --panel: #111820;
+      --panel-2: #151f29;
+      --text: #f6f8fb;
+      --muted: #a9b4c0;
+      --line: rgba(255,255,255,0.14);
+      --accent: #5eead4;
+      --accent-2: #f8c96a;
+      --danger: #fb7185;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    a { color: inherit; }
+
+    .hero {
+      min-height: 92vh;
+      display: grid;
+      align-items: end;
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(11,15,20,0.94), rgba(11,15,20,0.72) 42%, rgba(11,15,20,0.38)),
+        linear-gradient(0deg, rgba(11,15,20,0.98), rgba(11,15,20,0.2) 34%),
+        url("screenshots/live-feed.png") center right / min(1120px, 76vw) auto no-repeat,
+        #0b0f14;
+    }
+
+    .hero-inner {
+      position: relative;
+      width: min(1180px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 28px 0 8vh;
+    }
+
+    nav {
+      position: fixed;
+      top: 0;
+      left: 50%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      width: min(1180px, 100vw);
+      padding: 14px 20px;
+      transform: translateX(-50%);
+      background: rgba(11,15,20,0.78);
+      backdrop-filter: blur(16px);
+      z-index: 2;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .brand img {
+      width: 30px;
+      height: 30px;
+      border-radius: 7px;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    h1 {
+      max-width: 780px;
+      margin: 0 0 18px;
+      font-size: clamp(48px, 7vw, 92px);
+      line-height: 0.96;
+      letter-spacing: 0;
+    }
+
+    .lede {
+      max-width: 650px;
+      margin: 0 0 28px;
+      color: #d7dee7;
+      font-size: 21px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 26px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 700;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #06231f;
+    }
+
+    .proof {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .proof span {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      background: rgba(0,0,0,0.22);
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 60px 0 78px;
+    }
+
+    section {
+      padding: 42px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 30px;
+      letter-spacing: 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .tile {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+      background: var(--panel);
+      min-height: 178px;
+    }
+
+    .tile strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 18px;
+    }
+
+    .tile p, .flow p, .note p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    ol {
+      margin: 0;
+      padding-left: 22px;
+      color: #dbe3ec;
+    }
+
+    li { margin: 10px 0; }
+
+    code {
+      font: 0.92em ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: var(--accent);
+    }
+
+    .note {
+      border-left: 3px solid var(--accent-2);
+      padding-left: 18px;
+    }
+
+    .risk {
+      color: #ffd2db;
+      border-left-color: var(--danger);
+    }
+
+    footer {
+      width: min(1180px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 34px 0 48px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 820px) {
+      .hero {
+        min-height: 820px;
+      }
+
+      .hero::before {
+        background:
+          linear-gradient(0deg, rgba(11,15,20,0.98), rgba(11,15,20,0.55) 48%, rgba(11,15,20,0.88)),
+          url("screenshots/live-feed.png") center top 72px / 980px auto no-repeat,
+          #0b0f14;
+      }
+
+      .hero-inner {
+        padding-top: 260px;
+      }
+
+      nav {
+        padding: 12px 20px;
+      }
+
+      .nav-links {
+        gap: 10px;
+        font-size: 13px;
+      }
+
+      h1 {
+        font-size: 46px;
+      }
+
+      .lede {
+        font-size: 18px;
+      }
+
+      .grid, .flow {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <nav>
+        <div class="brand">
+          <img src="../app/Observatory/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" alt="">
+          <span>Agent Observatory</span>
+        </div>
+        <div class="nav-links">
+          <a href="https://github.com/cipher982/agent-observatory">GitHub</a>
+          <a href="https://github.com/cipher982/agent-observatory/releases">Download</a>
+        </div>
+      </nav>
+
+      <h1>See what your coding agents actually received.</h1>
+      <p class="lede">A local-first macOS app for inspecting agent instructions, available tools, transcript evidence, and verified outbound LLM request facts.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/cipher982/agent-observatory/releases">Download for macOS</a>
+        <a class="button" href="https://github.com/cipher982/agent-observatory">Read the README</a>
+      </div>
+      <div class="proof">
+        <span>Local-first</span>
+        <span>Signed and notarized</span>
+        <span>NetworkExtension capture</span>
+        <span>No hosted account</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Why it exists</h2>
+      <div class="grid">
+        <div class="tile">
+          <strong>Context is invisible</strong>
+          <p>When an agent ignores a repo rule, you usually cannot tell whether the instruction was missing, buried, or overridden.</p>
+        </div>
+        <div class="tile">
+          <strong>Tools drift quietly</strong>
+          <p>Observatory compares expected tools and skills against transcript evidence and verified outbound requests.</p>
+        </div>
+        <div class="tile">
+          <strong>Local evidence matters</strong>
+          <p>The app runs on your Mac, reads local transcripts, and stores derived facts instead of raw prompt bodies on disk.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>How the capture model works</h2>
+      <div class="flow">
+        <div>
+          <ol>
+            <li>Open the app and inspect the demo feed without installing anything privileged.</li>
+            <li>Choose live capture when you want to inspect your own agents.</li>
+            <li>Approve the macOS NetworkExtension and login-keychain CA trust.</li>
+            <li>Restart the agent shell so Claude Code or Codex inherits additive trust.</li>
+            <li>Use agents normally and watch provider requests appear in the live feed.</li>
+          </ol>
+        </div>
+        <div class="note">
+          <p>Only allowlisted LLM-provider TLS flows are routed to the local proxy. Non-provider traffic is direct-relayed after the SNI check and is not decrypted or persisted.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>What it shows</h2>
+      <div class="grid">
+        <div class="tile">
+          <strong>Expected context</strong>
+          <p>Resolved repo instructions, skills, and tool expectations for the workspace.</p>
+        </div>
+        <div class="tile">
+          <strong>Observed evidence</strong>
+          <p>Facts read from local Claude, Codex, and agent transcript files.</p>
+        </div>
+        <div class="tile">
+          <strong>Verified requests</strong>
+          <p>Endpoint, runtime, prompt size, and tool names captured from outbound provider requests.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Launch status</h2>
+      <div class="flow">
+        <div class="note">
+          <p>The v0.2 line is signed, notarized, and passing local release QA. The remaining public-launch gate is a final real Claude Code completion proof on the launch machine before publishing the GitHub release.</p>
+        </div>
+        <div class="note risk">
+          <p>Current limitations: macOS 26 preview app, HTTP/3 is not captured, ECH fails open, already-running agents need a restart, and session-to-capture correlation is coarse.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Agent Observatory is open source and local-first. Built for people who want a debugger for agent context, not another hosted trace warehouse.</span>
+  </footer>
+</body>
+</html>
