@@ -108,8 +108,28 @@ Expected:
 
 ## 6. Prove Real Claude Code Capture And Completion
 
-Start a new shell after install so additive trust env vars are inherited. Then
-run a minimal real Claude Code turn.
+Start a new shell after install so additive trust env vars are inherited. First
+prove Claude Code can complete without Observatory being the suspect:
+
+```bash
+env | awk -F= '/(ANTHROPIC|CLAUDE|API_KEY|TOKEN)/ {print $1}' | sort
+claude auth status
+claude -p "Say exactly: observatory auth preflight"
+```
+
+If `claude auth status` says logged in but the prompt returns `401 Invalid
+authentication credentials`, repair Claude Code auth before testing capture:
+
+```bash
+claude auth logout
+claude auth login
+claude -p "Say exactly: observatory auth preflight"
+```
+
+Do not use `claude --bare` for this proof; bare mode skips OAuth/keychain auth
+and would test a different credential path than normal Claude Code usage.
+
+Then run a minimal real Claude Code turn while watching the Observatory stream.
 
 In one terminal:
 
