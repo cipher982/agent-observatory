@@ -102,7 +102,7 @@ curl --cacert ~/.local/state/agent-observatory/ca/observatory-ca.pem \
 
 | # | Criterion | Status | Evidence / note |
 |---|-----------|--------|----------------|
-| A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ | Current `b45d367` artifacts are Developer ID signed, notarized, stapled, and Gatekeeper-accepted. `make release-qa` passes; `make v02-readiness` passes the artifact and notarization sections. |
+| A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ | Current v0.2 artifacts are Developer ID signed, notarized, stapled, and Gatekeeper-accepted. `make release-qa` passes; `make v02-readiness` passes the artifact and notarization sections. |
 | A2 | In /Applications, sysext `activated enabled` | ⚠️ host needs reboot after old disable path | The v0.2 app/daemon/CA were previously clean and enabled. Testing the old Disable action intentionally deactivated the sysext and macOS now reports `0.2.0/5` `terminated waiting to uninstall on reboot`. Reboot, install the fixed build, then approve/start capture again. |
 | B3 | Live capture of a real agent, captured AND agent completes | ⚠️ partial | Current v0.2 live NE capture emits real Claude Code requests (`api.anthropic.com`, `anthropic/messages`, ~27k system chars, 11 tools) and controlled Anthropic probes forward to real upstream 401s. Still TODO: local Claude auth must be repaired so a real Claude Code turn completes normally while captured. |
 | B4 | Unrelated traffic untouched | ✅ | While active, `example.com:443` kept its real **Cloudflare** cert (not Observatory CA), plain HTTP 200, **0 captures** during unrelated traffic; only `api.openai.com` presented the Observatory CA. |
