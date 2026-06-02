@@ -15,11 +15,12 @@ ZIP="dist/Agent-Observatory-0.2.0-macOS.zip"
 
 run_trust=0
 run_notarize=0
+run_stage=0
 run_publish=0
 
 usage() {
   cat <<'USAGE'
-usage: scripts/v02-finalize.sh [--trust] [--notarize] [--publish]
+usage: scripts/v02-finalize.sh [--trust] [--notarize] [--stage] [--publish]
 
 Default mode is read-only and prints the current final-gate state.
 
@@ -29,6 +30,9 @@ Flags:
   --notarize  Run make notarize, then make release-qa.
               Requires NOTARY_PROFILE, or APP_STORE_CONNECT_KEY_ID plus
               APP_STORE_CONNECT_API_KEY_P8.
+  --stage     Upload current dist assets to the v0.2.0 draft release and retarget
+              it to HEAD, while keeping the release unpublished. Requires
+              CONFIRM_STAGE_V02=1 and strict release QA to pass.
   --publish   Create GitHub release v0.2.0 from current HEAD and dist assets.
               Requires CONFIRM_PUBLISH_V02=1 and strict release QA to pass.
               Refuses to mutate an already-public release unless
@@ -40,8 +44,9 @@ Run order for a real release:
   3. NOTARY_PROFILE=<profile> scripts/v02-finalize.sh --notarize
      # or APP_STORE_CONNECT_KEY_ID=... APP_STORE_CONNECT_API_KEY_P8=... scripts/v02-finalize.sh --notarize
   4. approve/enable the NetworkExtension from the app and prove Claude Code live
-  5. CONFIRM_PUBLISH_V02=1 scripts/v02-finalize.sh --publish
-  6. make v02-readiness
+  5. CONFIRM_STAGE_V02=1 scripts/v02-finalize.sh --stage
+  6. CONFIRM_PUBLISH_V02=1 scripts/v02-finalize.sh --publish
+  7. make v02-readiness
 USAGE
 }
 
@@ -49,6 +54,7 @@ for arg in "$@"; do
   case "$arg" in
     --trust) run_trust=1 ;;
     --notarize) run_notarize=1 ;;
+    --stage) run_stage=1 ;;
     --publish) run_publish=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "v02-finalize: unknown argument $arg" >&2; usage >&2; exit 2 ;;
@@ -118,7 +124,7 @@ status_snapshot() {
     --json tagName,name,targetCommitish,assets,url 2>/dev/null || echo "v0.2.0 release not found"
 }
 
-if [ "$run_trust" -eq 0 ] && [ "$run_notarize" -eq 0 ] && [ "$run_publish" -eq 0 ]; then
+if [ "$run_trust" -eq 0 ] && [ "$run_notarize" -eq 0 ] && [ "$run_stage" -eq 0 ] && [ "$run_publish" -eq 0 ]; then
   status_snapshot
   exit 0
 fi
@@ -140,6 +146,52 @@ if [ "$run_notarize" -eq 1 ]; then
   fi
   NOTARY_PROFILE="${NOTARY_PROFILE:-}" make notarize
   make release-qa
+fi
+
+if [ "$run_stage" -eq 1 ]; then
+  section "Stage v0.2.0 Draft"
+  test "${CONFIRM_STAGE_V02:-}" = "1" || {
+    echo "v02-finalize: set CONFIRM_STAGE_V02=1 to mutate the GitHub draft release v0.2.0" >&2
+    exit 2
+  }
+  require_path "$DMG"
+  require_path "$ZIP"
+  require_path dist/agents
+  require_path dist/SHA256SUMS
+  require_clean_release_tree
+  require_dist_build_current
+  make release-qa
+  if gh release view v0.2.0 --repo cipher982/agent-observatory >/dev/null 2>&1; then
+    is_draft="$(gh release view v0.2.0 --repo cipher982/agent-observatory --json isDraft --jq .isDraft)"
+    if [ "$is_draft" != "true" ]; then
+      echo "v02-finalize: v0.2.0 is already public; refusing to restage it" >&2
+      exit 2
+    fi
+    gh release upload v0.2.0 \
+      --repo cipher982/agent-observatory \
+      --clobber \
+      "$DMG" \
+      "$ZIP" \
+      dist/agents \
+      dist/SHA256SUMS
+    gh release edit v0.2.0 \
+      --repo cipher982/agent-observatory \
+      --target "$(git rev-parse HEAD)" \
+      --title "Agent Observatory v0.2.0" \
+      --notes-file docs/release-v0.2-draft.md \
+      --draft
+  else
+    gh release create v0.2.0 \
+      --repo cipher982/agent-observatory \
+      --target "$(git rev-parse HEAD)" \
+      --title "Agent Observatory v0.2.0" \
+      --notes-file docs/release-v0.2-draft.md \
+      --draft \
+      "$DMG" \
+      "$ZIP" \
+      dist/agents \
+      dist/SHA256SUMS
+  fi
 fi
 
 if [ "$run_publish" -eq 1 ]; then

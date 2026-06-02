@@ -34,8 +34,8 @@ public artifacts.
 - macOS 26 preview and Xcode 26 for the native app.
 - Claude Code: observed transcript support; verified capture through the
   NetworkExtension/proxy path after the agent is restarted to inherit trust.
-  Current launch-machine note: Claude auth is repaired, and the final build 6
-  capture-and-complete proof is still pending.
+  Current launch-machine note: build 6 captured and completed a real Claude Code
+  turn on 2026-06-02.
 - Codex: observed transcript support and verified capture via HTTP fallback from
   its WebSocket responses transport.
 - Antigravity: discovery-only when conversation bodies are opaque `.pb` files.
@@ -59,7 +59,8 @@ for:
 - `make release`
 - `NOTARY_PROFILE=<profile> make notarize` or App Store Connect API-key env auth
 - `make release-qa`
-- clean `systemextensionsctl` Observatory state
+- clean `systemextensionsctl` Observatory state, or current build activated/enabled
+  with only an older non-routing tombstone documented
 - a real Claude Code run that both captures and completes
 - `make v02-readiness`
 

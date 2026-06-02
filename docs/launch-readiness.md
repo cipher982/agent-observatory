@@ -57,12 +57,14 @@
 - **DONE:** the routing-loop fix is verified live (dev-scoped harness → real
   provider 401/405, no loop). No VM needed — `docs/scoped-capture-dev.md` shows
   the safe on-host method.
-- **Remaining:** restage build 6, repair the host's stale
-  system-extension state with the fixed NetworkExtension-manager reset path,
-  then run a real
-  **Claude Code** (HTTP-path) turn under live NE capture and confirm it both
-  captures AND completes. Claude Code auth was repaired on 2026-06-02 and
-  `claude -p "Say exactly: observatory auth preflight"` succeeds.
+- **DONE:** build 6 is active/enabled on this host with only the old build 5
+  tombstone remaining. Real provider traffic is routing through Observatory.
+- **DONE:** a real **Claude Code** (HTTP-path) turn under live NE capture both
+  captured and completed. Claude Code auth was repaired on 2026-06-02 and
+  `claude -p "Say exactly: observatory live capture proof"` returned the
+  requested text while the daemon logged `api.anthropic.com /v1/messages`.
+- **Remaining:** restage the v0.2.0 GitHub draft with final build 6 assets and
+  publish only after explicit release approval.
 - **Release artifact rebuilt and notarized locally, not yet restaged:** build 6
   changes Disable Capture to stop/disable the transparent-proxy manager and
   remove CA trust, and adds a Reset Capture Config action that removes
@@ -103,8 +105,8 @@ curl --cacert ~/.local/state/agent-observatory/ca/observatory-ca.pem \
 | # | Criterion | Status | Evidence / note |
 |---|-----------|--------|----------------|
 | A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ local build 6 passes | Build 6 artifacts are Developer ID signed, notarized, stapled, and Gatekeeper-accepted locally. The GitHub draft still contains stale build 5 assets and must be refreshed before publication. |
-| A2 | In /Applications, sysext `activated enabled` | ⚠️ host registry dirty | The v0.2 app/daemon/CA were previously clean and enabled. Testing the old Disable action intentionally deactivated the sysext and macOS now reports `0.2.0/5` `terminated waiting to uninstall on reboot`; a 2026-06-02 12:13 EDT reboot did not clear it. Build 6 adds an app-side manager reset and bumps the sysext build number to give macOS a new replacement candidate. |
-| B3 | Live capture of a real agent, captured AND agent completes | ⚠️ proof pending | Claude Code auth is repaired and preflight succeeds. Still TODO: enable build 6 live capture on this host, run a real Claude Code turn, and prove it both captures and completes. |
+| A2 | In /Applications, sysext `activated enabled` | ✅ current build active; old tombstone warning | `systemextensionsctl` shows build `0.2.0/6` as `[activated enabled]`. The old `0.2.0/5` entry remains `terminated waiting to uninstall on reboot`, but traffic proves build 6 is routing. |
+| B3 | Live capture of a real agent, captured AND agent completes | ✅ build 6 proven | `claude -p "Say exactly: observatory live capture proof"` completed with the requested output, and daemon log recorded `api.anthropic.com /v1/messages -> system 27796 chars, 11 tools` at 2026-06-02 18:13:45 EDT. |
 | B4 | Unrelated traffic untouched | ✅ | While active, `example.com:443` kept its real **Cloudflare** cert (not Observatory CA), plain HTTP 200, **0 captures** during unrelated traffic; only `api.openai.com` presented the Observatory CA. |
 | B5 | Fail-open + stability | ✅ | Stopping the daemon reverted providers to real certs (NE fail-open → agents keep working — verified repeatedly). Client CA-reject → `clientTLSFailures` on `/healthz` → app warns. SNI fragmentation tests pass. |
 | C6 | Disable/uninstall reverses | ⚠️ build 6 proof pending | `agents uninstall` cleans daemon/state/env/keychain trust. Build 6 app code now disables/removes the Observatory manager config and removes CA trust without deactivating the sysext. The app-owned CLI reset was rebuilt and verified locally on 2026-06-02; it removes Observatory's manager config and CA trust without reboot. Needs notarized build 6 install plus enable/disable/re-enable proof. |

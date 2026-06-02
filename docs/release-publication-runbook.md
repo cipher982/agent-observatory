@@ -77,24 +77,21 @@ gh release create v0.2.0 \
 Do not create the release until the `VERSION`, app `MARKETING_VERSION`, and
 bundled helper version all report `0.2.0`.
 
-Equivalent guarded helper:
+Equivalent guarded staging helper:
 
 ```bash
-CONFIRM_PUBLISH_V02=1 scripts/v02-finalize.sh --publish
+CONFIRM_STAGE_V02=1 scripts/v02-finalize.sh --stage
 ```
 
-For an existing draft, the guarded helper uploads the current local artifacts
-with `--clobber` before publishing.
+For an existing draft, the guarded staging helper uploads the current local
+artifacts with `--clobber`, retargets the draft to `HEAD`, and keeps it
+unpublished.
 
 When the final live proof is recorded, retarget the draft to the final commit if
 needed, refresh the notes, then publish:
 
 ```bash
-gh release edit v0.2.0 \
-  --repo cipher982/agent-observatory \
-  --target "$(git rev-parse HEAD)" \
-  --notes-file docs/release-v0.2-draft.md \
-  --draft=false
+CONFIRM_PUBLISH_V02=1 scripts/v02-finalize.sh --publish
 ```
 
 ## 5. Verify Publication

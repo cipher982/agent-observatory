@@ -366,6 +366,7 @@ The final interactive release gates are grouped behind an explicit helper:
 make v02-finalize                         # read-only status
 scripts/v02-finalize.sh --trust           # may prompt for login-keychain trust
 NOTARY_PROFILE=<profile> scripts/v02-finalize.sh --notarize
+CONFIRM_STAGE_V02=1 scripts/v02-finalize.sh --stage
 CONFIRM_PUBLISH_V02=1 scripts/v02-finalize.sh --publish
 ```
 
