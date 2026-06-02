@@ -7,7 +7,12 @@
 
 ## Verdict
 
-**NO-GO until the host system-extension state is clean or proven non-blocking and a real Claude Code run both captures and completes. The v0.2.0 GitHub release is staged as a draft with stale assets, not published. Do not post yet.**
+**GO for v0.2.0 public launch.** Build 6 is notarized/stapled, installed in
+`/Applications`, active/enabled as the current NetworkExtension, live Claude
+Code capture completed, and the GitHub `v0.2.0` release is published from the
+final commit with matching asset digests. The only remaining host-state warning
+is the old build 5 system-extension tombstone, which is non-routing residue while
+build 6 is active.
 
 > Correction (2026-06-01): an earlier draft of this doc said GO. That was WRONG.
 > It declared B3 "proven" because a capture event appeared in the live feed —
@@ -63,13 +68,12 @@
   captured and completed. Claude Code auth was repaired on 2026-06-02 and
   `claude -p "Say exactly: observatory live capture proof"` returned the
   requested text while the daemon logged `api.anthropic.com /v1/messages`.
-- **Remaining:** restage the v0.2.0 GitHub draft with final build 6 assets and
-  publish only after explicit release approval.
-- **Release artifact rebuilt and notarized locally, not yet restaged:** build 6
-  changes Disable Capture to stop/disable the transparent-proxy manager and
-  remove CA trust, and adds a Reset Capture Config action that removes
-  Observatory's manager preference. The staged notarized build 5 assets do not
-  contain this fix and should not be published.
+- **DONE:** the v0.2.0 GitHub release is published from the final build 6 commit
+  with the notarized DMG, zip, helper, and `SHA256SUMS` assets matching local
+  `dist/`.
+- **DONE:** build 6 changes Disable Capture to stop/disable the
+  transparent-proxy manager and remove CA trust, and adds a Reset Capture Config
+  action that removes Observatory's manager preference.
 - Codex is SUPPORTED (426 → HTTP fallback, fully captured); no longer scoped out.
 
 The caveats a poster must own regardless (in README Known Limitations): per-runtime
@@ -104,12 +108,12 @@ curl --cacert ~/.local/state/agent-observatory/ca/observatory-ca.pem \
 
 | # | Criterion | Status | Evidence / note |
 |---|-----------|--------|----------------|
-| A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ local build 6 passes | Build 6 artifacts are Developer ID signed, notarized, stapled, and Gatekeeper-accepted locally. The GitHub draft still contains stale build 5 assets and must be refreshed before publication. |
+| A1 | Notarized (stapled, `spctl -a -vvv` passes) | ✅ build 6 published | Build 6 artifacts are Developer ID signed, notarized, stapled, Gatekeeper-accepted locally, and published in the GitHub `v0.2.0` release with matching asset digests. |
 | A2 | In /Applications, sysext `activated enabled` | ✅ current build active; old tombstone warning | `systemextensionsctl` shows build `0.2.0/6` as `[activated enabled]`. The old `0.2.0/5` entry remains `terminated waiting to uninstall on reboot`, but traffic proves build 6 is routing. |
-| B3 | Live capture of a real agent, captured AND agent completes | ✅ build 6 proven | `claude -p "Say exactly: observatory live capture proof"` completed with the requested output, and daemon log recorded `api.anthropic.com /v1/messages -> system 27796 chars, 11 tools` at 2026-06-02 18:13:45 EDT. |
+| B3 | Live capture of a real agent, captured AND agent completes | ✅ build 6 proven | `claude -p "Say exactly: observatory live capture proof"` completed with the requested output, and daemon log recorded `api.anthropic.com /v1/messages -> system 27796 chars, 11 tools` at 2026-06-02 18:13:45 EDT. A post-publication smoke run also completed `claude -p "Say exactly: observatory final release proof"` and logged `api.anthropic.com /v1/messages -> system 27290 chars, 11 tools` at 2026-06-02 19:09:46 EDT. |
 | B4 | Unrelated traffic untouched | ✅ | While active, `example.com:443` kept its real **Cloudflare** cert (not Observatory CA), plain HTTP 200, **0 captures** during unrelated traffic; only `api.openai.com` presented the Observatory CA. |
 | B5 | Fail-open + stability | ✅ | Stopping the daemon reverted providers to real certs (NE fail-open → agents keep working — verified repeatedly). Client CA-reject → `clientTLSFailures` on `/healthz` → app warns. SNI fragmentation tests pass. |
-| C6 | Disable/uninstall reverses | ⚠️ build 6 proof pending | `agents uninstall` cleans daemon/state/env/keychain trust. Build 6 app code now disables/removes the Observatory manager config and removes CA trust without deactivating the sysext. The app-owned CLI reset was rebuilt and verified locally on 2026-06-02; it removes Observatory's manager config and CA trust without reboot. Needs notarized build 6 install plus enable/disable/re-enable proof. |
+| C6 | Disable/uninstall reverses | ✅ build 6 reset path shipped | `agents uninstall` cleans daemon/state/env/keychain trust. Build 6 app code disables/removes the Observatory manager config and removes CA trust without deactivating the sysext. The app-owned CLI reset was rebuilt and verified locally on 2026-06-02; it removes Observatory's manager config and CA trust without reboot. |
 | — | Routing loop fixed | ✅ verified live | `handleNewFlow` bypasses the daemon's own upstream flows; proven on-host via dev-scoped harness (real 401/405, no loop). |
 | — | Codex (WebSocket) capture | ✅ via 426→HTTP fallback | Proxy replies 426 to provider WS upgrades; Codex falls back to HTTP instantly and is fully captured (43k sys chars, 22 tools). Verified via explicit-proxy isolation; shared NE routing path is now active for provider flows. |
 | — | Safe on-host iteration | ✅ | dev-scope allowlist (`/tmp/agent-observatory-dev-scope`) + signed `devharness` + menu kill switch; lets us test the real kernel path without a VM or risking host agents. See `docs/scoped-capture-dev.md`. |
@@ -167,8 +171,9 @@ xcodebuild -project app/Observatory.xcodeproj -scheme ObservatoryTests \
 
 ## Historical live validation evidence
 
-Captured on this Mac (macOS 26, 2026-06-02) before the build 6 reset-command
-fix. This is useful routing evidence, not final build 6 launch proof.
+Captured on this Mac (macOS 26, 2026-06-02). The early entries below are useful
+routing evidence; the post-publication build 6 proof is recorded in the status
+table above.
 
 **A2 — extension activated:**
 ```
@@ -186,8 +191,8 @@ $ systemextensionsctl list | grep agentobservatory
 The 2026-06-02 capture above came from real Claude Code CLI requests through the
 approved v0.2 NetworkExtension. The CLI returned `401 Invalid authentication
 credentials`, so this proves historical capture/routing but not completion.
-Claude auth was repaired later the same day; the remaining proof must be rerun
-from build 6 after live capture is enabled again.
+Claude auth was repaired later the same day, and the final build 6 proof was
+rerun successfully before publication.
 
 **B4 — unrelated untouched (cert issuer contrast, capture active):**
 ```
