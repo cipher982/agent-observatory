@@ -215,6 +215,11 @@ struct OnboardingView: View {
             }
             Text("Reset / uninstall:")
                 .font(.caption).foregroundStyle(.secondary)
+            Button(role: .destructive) { proxy.resetCaptureConfiguration() } label: {
+                Label("Reset Capture Config", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .buttonStyle(.bordered)
+            .disabled(proxy.status == .activating)
             HStack(spacing: 10) {
                 Text(engine.uninstallCommand)
                     .font(.caption.monospaced())
@@ -358,7 +363,7 @@ private struct TrustBoundaryPanel: View {
                 }
                 GridRow {
                     TrustFact(symbol: "internaldrive", title: "Stored", detail: "Endpoint, prompt length, tool names, evidence marks")
-                    TrustFact(symbol: "trash", title: "Reversible", detail: "Reset removes the extension, daemon, keychain trust, and CA state")
+                    TrustFact(symbol: "trash", title: "Reversible", detail: "Reset disables capture config; uninstall removes daemon, keychain trust, and CA state")
                 }
             }
         }

@@ -34,6 +34,11 @@ struct ObservatoryMenuBarView: View {
         }
         .disabled(proxy.status == .activating)
 
+        Button("Reset Capture Config") {
+            proxy.resetCaptureConfiguration()
+        }
+        .disabled(proxy.status == .activating)
+
         Button(engine.mode == .demo ? "Switch to Live Mode" : "Switch to Demo Mode") {
             engine.restart(mode: engine.mode == .demo ? .live : .demo)
         }

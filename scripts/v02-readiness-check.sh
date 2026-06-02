@@ -14,10 +14,12 @@ DMG_NAME="Agent-Observatory-${VERSION}-macOS.dmg"
 ZIP_NAME="Agent-Observatory-${VERSION}-macOS.zip"
 DIST="$ROOT/dist"
 APP_PATH="$DIST/$APP_NAME"
+INSTALLED_APP_PATH="/Applications/$APP_NAME"
 DMG_PATH="$DIST/$DMG_NAME"
 ZIP_PATH="$DIST/$ZIP_NAME"
 HELPER_PATH="$APP_PATH/Contents/Resources/agents"
-INSTALLED_HELPER="/Applications/$APP_NAME/Contents/Resources/agents"
+INSTALLED_HELPER="$INSTALLED_APP_PATH/Contents/Resources/agents"
+EXPECTED_BUILD_VERSION="$(sed -n 's/^[[:space:]]*CURRENT_PROJECT_VERSION:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' app/project.yml | head -n1)"
 
 pass=0
 warn=0
@@ -57,6 +59,22 @@ else
   bad "default release path is not clearly headless"
 fi
 
+section "Git State"
+tracked_dirty="$(git status --porcelain --untracked-files=no 2>/dev/null || true)"
+untracked_release="$(git ls-files --others --exclude-standard app backend scripts docs Makefile README.md SECURITY.md 2>/dev/null || true)"
+if [ -z "$tracked_dirty" ]; then
+  ok "tracked release tree has no uncommitted changes"
+else
+  bad "tracked release tree has uncommitted changes"
+  sed 's/^/      /' <<<"$tracked_dirty"
+fi
+if [ -z "$untracked_release" ]; then
+  ok "no untracked release-affecting files"
+else
+  bad "untracked release-affecting files exist"
+  sed 's/^/      /' <<<"$untracked_release"
+fi
+
 section "Local Artifacts"
 for p in "$APP_PATH" "$DMG_PATH" "$ZIP_PATH" "$DIST/agents" "$DIST/SHA256SUMS"; do
   if [ -e "$p" ]; then ok "found ${p#$ROOT/}"; else bad "missing ${p#$ROOT/}"; fi
@@ -71,6 +89,16 @@ if [ -x "$HELPER_PATH" ]; then
   fi
 else
   bad "bundled helper is not executable"
+fi
+
+dist_app_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)"
+dist_ext_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Library/SystemExtensions/com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension.systemextension/Contents/Info.plist" 2>/dev/null || true)"
+if [ -n "$EXPECTED_BUILD_VERSION" ] &&
+   [ "$dist_app_version" = "$EXPECTED_BUILD_VERSION" ] &&
+   [ "$dist_ext_version" = "$EXPECTED_BUILD_VERSION" ]; then
+  ok "dist app and system extension build match project build $EXPECTED_BUILD_VERSION"
+else
+  bad "dist build does not match project build (project=${EXPECTED_BUILD_VERSION:-unknown}, app=${dist_app_version:-unknown}, ext=${dist_ext_version:-unknown})"
 fi
 
 if [ -d "$APP_PATH" ] && codesign --verify --deep --strict "$APP_PATH" >/dev/null 2>&1; then
@@ -116,6 +144,26 @@ if [ -x "$INSTALLED_HELPER" ]; then
       bad "installed helper does not match dist helper"
     fi
   fi
+  dist_app_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)"
+  installed_app_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INSTALLED_APP_PATH/Contents/Info.plist" 2>/dev/null || true)"
+  if [ -n "$dist_app_version" ] && [ "$dist_app_version" = "$installed_app_version" ]; then
+    ok "installed app bundle version matches dist ($installed_app_version)"
+  else
+    bad "installed app bundle version does not match dist (dist=${dist_app_version:-unknown}, installed=${installed_app_version:-unknown})"
+  fi
+  DIST_EXT="$APP_PATH/Contents/Library/SystemExtensions/com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension.systemextension"
+  INSTALLED_EXT="$INSTALLED_APP_PATH/Contents/Library/SystemExtensions/com.github.cipher982.agentobservatory.Observatory.TransparentProxyExtension.systemextension"
+  if [ -x "$DIST_EXT/Contents/MacOS/TransparentProxyExtension" ] && [ -x "$INSTALLED_EXT/Contents/MacOS/TransparentProxyExtension" ]; then
+    dist_ext_hash="$(shasum -a 256 "$DIST_EXT/Contents/MacOS/TransparentProxyExtension" | awk '{print $1}')"
+    installed_ext_hash="$(shasum -a 256 "$INSTALLED_EXT/Contents/MacOS/TransparentProxyExtension" | awk '{print $1}')"
+    if [ "$dist_ext_hash" = "$installed_ext_hash" ]; then
+      ok "installed system extension binary matches dist"
+    else
+      bad "installed system extension binary does not match dist"
+    fi
+  else
+    bad "cannot compare installed system extension binary with dist"
+  fi
   status_out="$("$INSTALLED_HELPER" status 2>&1 || true)"
   if grep -q 'overall: installed' <<<"$status_out"; then
     ok "installed helper reports overall: installed"
@@ -141,10 +189,15 @@ fi
 if have systemextensionsctl; then
   se_out="$(systemextensionsctl list 2>/dev/null || true)"
   obs_lines="$(grep 'agentobservatory' <<<"$se_out" || true)"
-  active_enabled_count="$(grep 'agentobservatory' <<<"$se_out" | grep -c '\[activated enabled\]' || true)"
+  current_build_lines="$(grep 'agentobservatory' <<<"$se_out" | grep -F "(${VERSION}/${EXPECTED_BUILD_VERSION})" || true)"
+  current_active_enabled_count="$(grep -c '\[activated enabled\]' <<<"$current_build_lines" || true)"
+  current_waiting_count="$(grep -Ec 'waiting|terminated waiting' <<<"$current_build_lines" || true)"
   waiting_count="$(grep 'agentobservatory' <<<"$se_out" | grep -Ec 'waiting|terminated waiting' || true)"
-  if [ "$active_enabled_count" -eq 1 ] && [ "$waiting_count" -eq 0 ]; then
-    ok "exactly one Observatory system extension is activated/enabled"
+  if [ "$current_active_enabled_count" -eq 1 ] && [ "$waiting_count" -eq 0 ]; then
+    ok "current Observatory system extension build is activated/enabled"
+  elif [ "$current_active_enabled_count" -eq 1 ] && [ "$current_waiting_count" -eq 0 ] && [ "$waiting_count" -gt 0 ]; then
+    note "current Observatory build is active; older system-extension tombstone remains"
+    sed 's/^/      /' <<<"$obs_lines"
   else
     bad "Observatory system-extension state is not clean"
     if [ -n "$obs_lines" ]; then

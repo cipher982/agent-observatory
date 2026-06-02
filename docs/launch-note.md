@@ -38,6 +38,10 @@ What is not included yet:
 
 Repo: https://github.com/cipher982/agent-observatory
 
+Current caveat: this first native build targets macOS 26 preview. I am shipping
+it this way to validate the NetworkExtension capture path and security model
+before broadening OS support.
+
 The project is meant to be the missing inspector/debugger for agent context. I
 would especially like feedback on the install-once capture model, the local MITM
 security framing, and which agent runtimes should be hardened first.

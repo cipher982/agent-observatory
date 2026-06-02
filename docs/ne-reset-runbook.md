@@ -25,9 +25,20 @@ security find-certificate -a -c "Agent Observatory Local CA" -Z \
   ~/Library/Keychains/login.keychain-db || true
 ```
 
-If old Observatory extensions show `waiting to uninstall on reboot`, reboot
-before continuing. Do not try to prove v0.2 readiness from a dirty extension
-registry.
+If old Observatory extensions show `waiting to uninstall on reboot`, first make
+sure the installed app is the fixed build that can reset Observatory's
+`NETransparentProxyManager` configuration. Open `/Applications/Agent
+Observatory.app` and use **Reset Capture Config** from the menu bar or Advanced
+panel, or run the app-owned reset command:
+
+```bash
+"/Applications/Agent Observatory.app/Contents/MacOS/Agent Observatory" \
+  --reset-capture-config-and-exit
+```
+
+Then enable live capture again. If the entry still remains after the fixed build
+has reset its manager config and a new activation has been attempted, record the
+exact state before rebooting again.
 
 Developer cleanup commands do not avoid this requirement on a normal SIP-enabled
 Mac. `systemextensionsctl gc` only removes orphaned extensions and does not

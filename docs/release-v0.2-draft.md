@@ -22,6 +22,8 @@ public artifacts.
   HTTP fallback.
 - Routing-loop fix: Observatory's own upstream provider dials bypass the
   extension, preventing self-interception and 502s.
+- Reset Capture Config disables/removes Observatory's own NetworkExtension
+  manager preference without resetting unrelated system extensions.
 - Headless release build path: `make release` no longer runs Finder AppleScript
   or steals GUI focus.
 - Strict public release gate: app and DMG must be notarized, stapled, and
@@ -32,8 +34,8 @@ public artifacts.
 - macOS 26 preview and Xcode 26 for the native app.
 - Claude Code: observed transcript support; verified capture through the
   NetworkExtension/proxy path after the agent is restarted to inherit trust.
-  Current launch-machine note: live capture is proven, but the final
-  capture-and-complete proof is pending because local Claude auth returns 401.
+  Current launch-machine note: Claude auth is repaired, and the final build 6
+  capture-and-complete proof is still pending.
 - Codex: observed transcript support and verified capture via HTTP fallback from
   its WebSocket responses transport.
 - Antigravity: discovery-only when conversation bodies are opaque `.pb` files.
@@ -55,7 +57,7 @@ Before publishing this release, the release owner should have current evidence
 for:
 
 - `make release`
-- `NOTARY_PROFILE=<profile> make notarize`
+- `NOTARY_PROFILE=<profile> make notarize` or App Store Connect API-key env auth
 - `make release-qa`
 - clean `systemextensionsctl` Observatory state
 - a real Claude Code run that both captures and completes

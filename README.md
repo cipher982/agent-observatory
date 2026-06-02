@@ -351,6 +351,11 @@ For public distribution, notarize and staple the app and DMG after `make release
 
 ```bash
 NOTARY_PROFILE=<notarytool-keychain-profile> make notarize
+# or:
+APP_STORE_CONNECT_KEY_ID=<key-id> \
+APP_STORE_CONNECT_API_KEY_P8=/path/to/AuthKey_<key-id>.p8 \
+APP_STORE_CONNECT_ISSUER_ID=<issuer-uuid> \
+make notarize
 make release-qa
 make v02-readiness
 ```
@@ -430,6 +435,11 @@ make app-build
 make release
 make release-layout-qa
 NOTARY_PROFILE=<notarytool-keychain-profile> make notarize
+# or:
+APP_STORE_CONNECT_KEY_ID=<key-id> \
+APP_STORE_CONNECT_API_KEY_P8=/path/to/AuthKey_<key-id>.p8 \
+APP_STORE_CONNECT_ISSUER_ID=<issuer-uuid> \
+make notarize
 make release-qa
 ```
 

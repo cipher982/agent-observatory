@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Notarize and staple the current dist/ release artifacts, then rebuild checksums.
 #
-# Requires:
+# Requires one notarization auth mode:
 #   NOTARY_PROFILE=<xcrun notarytool keychain profile>
+#   APP_STORE_CONNECT_KEY_ID=<key id>
+#   APP_STORE_CONNECT_API_KEY_P8=<raw .p8 contents or path to .p8 file>
+#   APP_STORE_CONNECT_ISSUER_ID=<issuer uuid>   # omit for Individual API keys
 #
 # Optional:
 #   DMG_STYLE=headless|polished       default: headless
@@ -15,7 +18,7 @@ DIST="$ROOT/dist"
 APP_NAME="Agent Observatory.app"
 DMG_NAME="Agent-Observatory-${VERSION}-macOS.dmg"
 ZIP_NAME="Agent-Observatory-${VERSION}-macOS.zip"
-NOTARY_PROFILE="${NOTARY_PROFILE:?set NOTARY_PROFILE=<notarytool keychain profile>}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 DMG_STYLE="${DMG_STYLE:-headless}"
 
 APP_PATH="$DIST/$APP_NAME"
@@ -28,6 +31,36 @@ fail() {
   exit 1
 }
 
+tmp="$(mktemp -d)"
+cleanup() {
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
+
+notary_auth_args=()
+if [ -n "$NOTARY_PROFILE" ]; then
+  notary_auth_args=(--keychain-profile "$NOTARY_PROFILE")
+elif [ -n "${APP_STORE_CONNECT_KEY_ID:-}" ] && [ -n "${APP_STORE_CONNECT_API_KEY_P8:-}" ]; then
+  key_path="$APP_STORE_CONNECT_API_KEY_P8"
+  if [ ! -f "$key_path" ]; then
+    case "$key_path" in
+      /*|./*|../*|~/*)
+        fail "App Store Connect API key file not found: $key_path"
+        ;;
+    esac
+    mkdir -p "$tmp"
+    key_path="$tmp/app-store-connect-key.p8"
+    printf "%s\n" "$APP_STORE_CONNECT_API_KEY_P8" > "$key_path"
+    chmod 600 "$key_path"
+  fi
+  notary_auth_args=(--key "$key_path" --key-id "$APP_STORE_CONNECT_KEY_ID")
+  if [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
+    notary_auth_args+=(--issuer "$APP_STORE_CONNECT_ISSUER_ID")
+  fi
+else
+  fail "set NOTARY_PROFILE=<notarytool profile> or APP_STORE_CONNECT_KEY_ID + APP_STORE_CONNECT_API_KEY_P8"
+fi
+
 test -d "$APP_PATH" || fail "missing $APP_PATH (run make release first)"
 test -x "$HELPER_PATH" || fail "missing executable bundled helper at $HELPER_PATH"
 codesign --verify --deep --strict "$APP_PATH" || fail "app codesign verification failed"
@@ -38,15 +71,9 @@ if [ -z "${DMG_CODESIGN_IDENTITY:-}" ]; then
 fi
 test -n "${DMG_CODESIGN_IDENTITY:-}" || fail "could not infer Developer ID identity for DMG signing"
 
-tmp="$(mktemp -d)"
-cleanup() {
-  rm -rf "$tmp"
-}
-trap cleanup EXIT
-
 echo "notarize-release: submitting app bundle via temporary zip"
 ditto -c -k --keepParent "$APP_PATH" "$tmp/app-notary.zip"
-xcrun notarytool submit "$tmp/app-notary.zip" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun notarytool submit "$tmp/app-notary.zip" "${notary_auth_args[@]}" --wait
 xcrun stapler staple "$APP_PATH"
 xcrun stapler validate "$APP_PATH"
 
@@ -60,7 +87,7 @@ DMG_STYLE="$DMG_STYLE" DMG_CODESIGN_IDENTITY="${DMG_CODESIGN_IDENTITY:-}" \
 codesign --verify --strict "$DMG_PATH" || fail "DMG codesign verification failed"
 
 echo "notarize-release: submitting DMG"
-xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun notarytool submit "$DMG_PATH" "${notary_auth_args[@]}" --wait
 xcrun stapler staple "$DMG_PATH"
 xcrun stapler validate "$DMG_PATH"
 

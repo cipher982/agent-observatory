@@ -5,6 +5,10 @@ struct ObservatoryApp: App {
     @State private var engine = EngineClient(apiPort: 7878, proxyPort: 7879)
     @State private var proxy = ProxyController()
 
+    init() {
+        CaptureResetCommand.runIfRequested()
+    }
+
     var body: some Scene {
         WindowGroup("Agent Observatory", id: "main") {
             ContentView()

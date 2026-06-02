@@ -4,6 +4,7 @@ Use this after the v0.2 readiness gates are green locally:
 
 - `make release`
 - `NOTARY_PROFILE=<profile> make notarize`
+  - or `APP_STORE_CONNECT_KEY_ID=... APP_STORE_CONNECT_API_KEY_P8=... make notarize`
 - `make release-qa`
 - `make v02-readiness` passes except for the remote-release gate
 - real Claude Code live NE proof is recorded
@@ -53,6 +54,10 @@ assets. GitHub draft releases may show asset URLs under an `untagged-*` slug
 until publication; that is normal. The readiness audit accepts a draft only when
 its target commit and asset digests match the local final state.
 
+If the app build number changes after a draft is staged, treat the draft assets
+as stale. Rebuild, notarize, delete/replace all draft assets, and retarget the
+draft before publishing.
+
 ## 4. Create v0.2.0
 
 ```bash
@@ -77,6 +82,9 @@ Equivalent guarded helper:
 ```bash
 CONFIRM_PUBLISH_V02=1 scripts/v02-finalize.sh --publish
 ```
+
+For an existing draft, the guarded helper uploads the current local artifacts
+with `--clobber` before publishing.
 
 When the final live proof is recorded, retarget the draft to the final commit if
 needed, refresh the notes, then publish:

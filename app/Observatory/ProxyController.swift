@@ -101,17 +101,34 @@ final class ProxyController: NSObject {
         // sysextd to deactivate the extension leaves macOS in a
         // "terminated waiting to uninstall on reboot" state, which makes the
         // normal off/on loop feel broken. The safe user-facing kill switch is:
-        // stop the transparent-proxy tunnel, then remove CA trust. The approved
-        // extension remains installed and can be started again without reboot.
+        // stop and disable the transparent-proxy manager, then remove CA trust.
+        // The approved extension remains installed and can be started again
+        // without reboot.
         //
         // Stop the tunnel FIRST, then remove CA trust — otherwise there's a
         // window where the proxy is still intercepting but agents no longer
         // trust its CA, which would fail their TLS handshakes instead of
         // cleanly passing through.
         Task {
-            await stopTunnel()
-            await self.removeCATrust()
-            self.status = .inactive
+            let disabled = await stopAndDisableTunnel()
+            let trustRemoved = await self.removeCATrust()
+            if disabled && trustRemoved {
+                self.status = .inactive
+            } else {
+                self.status = .failed("Disable capture did not complete cleanly; run the reset action or bundled uninstall.")
+            }
+        }
+    }
+
+    func resetCaptureConfiguration() {
+        Task {
+            let removed = await removeTunnelConfiguration()
+            let trustRemoved = await self.removeCATrust()
+            if removed && trustRemoved {
+                self.status = .inactive
+            } else {
+                self.status = .failed("Reset capture config failed; try quitting and relaunching Agent Observatory from /Applications.")
+            }
         }
     }
 
@@ -153,7 +170,8 @@ final class ProxyController: NSObject {
                         do {
                             try manager.connection.startVPNTunnel()
                             log.log("transparent proxy started (CA trust already installed)")
-                            self.status = .active
+                            self.status = .activating
+                            self.confirmTunnelConnected(manager)
                         } catch {
                             self.status = .failed("start tunnel: \(error.localizedDescription)")
                         }
@@ -170,6 +188,27 @@ final class ProxyController: NSObject {
     private func installCATrust() async -> Bool { await runHelperTrust("install") }
     @discardableResult
     func removeCATrust() async -> Bool { await runHelperTrust("remove") }
+
+    private func confirmTunnelConnected(_ manager: NETransparentProxyManager) {
+        Task { @MainActor in
+            let deadline = Date().addingTimeInterval(8)
+            while Date() < deadline {
+                switch manager.connection.status {
+                case .connected:
+                    self.status = .active
+                    return
+                case .disconnecting, .disconnected, .invalid:
+                    break
+                case .connecting, .reasserting:
+                    break
+                @unknown default:
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+            self.status = .failed("Capture extension was approved, but the tunnel did not report connected. Refresh and try again.")
+        }
+    }
 
     private func runHelperTrust(_ action: String) async -> Bool {
         guard let helper = Bundle.main.url(forResource: "agents", withExtension: nil) else {
@@ -191,17 +230,69 @@ final class ProxyController: NSObject {
         }.value
     }
 
-    private func stopTunnel() async {
+    private func stopAndDisableTunnel() async -> Bool {
         let bundleID = extensionBundleID
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            NETransparentProxyManager.loadAllFromPreferences { managers, _ in
+        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            NETransparentProxyManager.loadAllFromPreferences { managers, error in
+                if let error {
+                    log.error("load preferences before disable failed: \(error.localizedDescription, privacy: .public)")
+                    cont.resume(returning: false)
+                    return
+                }
                 // Stop only OUR manager — never another transparent proxy the user
                 // may have configured (matched the same way as configureAndStart).
                 let ours = managers?.first {
                     ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleID
                 }
-                ours?.connection.stopVPNTunnel()
-                cont.resume()
+                guard let ours else {
+                    cont.resume(returning: true)
+                    return
+                }
+                ours.connection.stopVPNTunnel()
+                guard ours.isEnabled else {
+                    cont.resume(returning: true)
+                    return
+                }
+                ours.isEnabled = false
+                ours.saveToPreferences { saveErr in
+                    if let saveErr {
+                        log.error("disable transparent proxy preferences failed: \(saveErr.localizedDescription, privacy: .public)")
+                        cont.resume(returning: false)
+                        return
+                    }
+                    log.log("transparent proxy manager disabled")
+                    cont.resume(returning: true)
+                }
+            }
+        }
+    }
+
+    private func removeTunnelConfiguration() async -> Bool {
+        let bundleID = extensionBundleID
+        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            NETransparentProxyManager.loadAllFromPreferences { managers, error in
+                if let error {
+                    log.error("load preferences before reset failed: \(error.localizedDescription, privacy: .public)")
+                    cont.resume(returning: false)
+                    return
+                }
+                let ours = managers?.first {
+                    ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundleID
+                }
+                guard let ours else {
+                    cont.resume(returning: true)
+                    return
+                }
+                ours.connection.stopVPNTunnel()
+                ours.removeFromPreferences { removeErr in
+                    if let removeErr {
+                        log.error("remove transparent proxy preferences failed: \(removeErr.localizedDescription, privacy: .public)")
+                        cont.resume(returning: false)
+                        return
+                    }
+                    log.log("transparent proxy manager removed")
+                    cont.resume(returning: true)
+                }
             }
         }
     }

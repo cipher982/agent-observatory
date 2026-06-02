@@ -43,7 +43,10 @@ release-polished: DMG_STYLE = polished
 release-polished: release
 
 notarize:
-	test -n "$(NOTARY_PROFILE)" || { echo "set NOTARY_PROFILE=<notarytool keychain profile>"; exit 2; }
+	@if [ -z "$(NOTARY_PROFILE)" ] && { [ -z "$$APP_STORE_CONNECT_KEY_ID" ] || [ -z "$$APP_STORE_CONNECT_API_KEY_P8" ]; }; then \
+		echo "set NOTARY_PROFILE=<notarytool keychain profile> or APP_STORE_CONNECT_KEY_ID + APP_STORE_CONNECT_API_KEY_P8"; \
+		exit 2; \
+	fi
 	NOTARY_PROFILE="$(NOTARY_PROFILE)" DMG_STYLE="$(DMG_STYLE)" scripts/notarize-release.sh
 
 release-layout-qa:
