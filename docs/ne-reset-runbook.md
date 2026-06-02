@@ -29,6 +29,14 @@ If old Observatory extensions show `waiting to uninstall on reboot`, reboot
 before continuing. Do not try to prove v0.2 readiness from a dirty extension
 registry.
 
+Developer cleanup commands do not avoid this requirement on a normal SIP-enabled
+Mac. `systemextensionsctl gc` only removes orphaned extensions and does not
+clear a valid `terminated waiting to uninstall on reboot` entry.
+`systemextensionsctl uninstall <teamID> <bundleID>` is blocked while System
+Integrity Protection is enabled. Do not use `systemextensionsctl reset` for
+release validation; it clears all system-extension state, including unrelated
+NetworkExtensions such as VPN tools.
+
 ## 2. Replace The Installed App
 
 Quit Agent Observatory completely, then replace the app from the fresh artifact:
