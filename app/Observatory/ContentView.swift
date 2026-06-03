@@ -18,21 +18,27 @@ struct ContentView: View {
             sidebar
                 .navigationSplitViewColumnWidth(min: 300, ideal: 340)
         } detail: {
-            ZStack {
-                HeroBackground(pulse: engine.pulse, live: engine.streamConnected)
-                detail
-            }
-            .safeAreaInset(edge: .top) {
-                if let warning = engine.captureWarning {
-                    Label(warning, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.black)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.yellow.opacity(0.9))
-                        .fixedSize(horizontal: false, vertical: true)
+            // The hero is the BACKGROUND of the detail, not a ZStack sibling.
+            // As a sibling, its .ignoresSafeArea() expanded the ZStack bounds and
+            // stripped the ScrollView's content inset — so the first/last cards
+            // rendered under the chrome and couldn't be scrolled into view. As a
+            // .background it bleeds behind the safe area while the content keeps
+            // its normal top/bottom insets.
+            detail
+                .safeAreaInset(edge: .top) {
+                    if let warning = engine.captureWarning {
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.black)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.yellow.opacity(0.9))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-            }
+                .background {
+                    HeroBackground(pulse: engine.pulse, live: engine.streamConnected)
+                }
         }
         .navigationTitle("Agent Observatory")
         .toolbar {

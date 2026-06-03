@@ -45,6 +45,12 @@ struct LiveFeedView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if !engine.liveEvents.isEmpty {
+                Label("newest first", systemImage: "arrow.up")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .labelStyle(.titleAndIcon)
+            }
             if engine.streamConnected {
                 Label("LIVE", systemImage: "dot.radiowaves.left.and.right")
                     .font(.caption.weight(.bold))
