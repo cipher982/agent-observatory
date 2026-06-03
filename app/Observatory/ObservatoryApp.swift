@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct ObservatoryApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var engine = EngineClient(apiPort: 7878, proxyPort: 7879)
     @State private var proxy = ProxyController()
 
@@ -15,16 +16,10 @@ struct ObservatoryApp: App {
                 .environment(engine)
                 .environment(proxy)
                 .frame(minWidth: 900, minHeight: 600)
+                .onAppear {
+                    appDelegate.configure(engine: engine, proxy: proxy)
+                }
         }
         .windowStyle(.hiddenTitleBar)
-
-        MenuBarExtra {
-            ObservatoryMenuBarView()
-                .environment(engine)
-                .environment(proxy)
-        } label: {
-            MenuBarDomeIcon(degraded: !engine.streamConnected)
-        }
-        .menuBarExtraStyle(.menu)
     }
 }
