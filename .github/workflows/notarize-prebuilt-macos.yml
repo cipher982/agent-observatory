@@ -55,7 +55,8 @@ jobs:
             --pattern "SHA256SUMS"
           test -s "prebuilt/Agent-Observatory-${VERSION}-macOS.zip"
           test -s "prebuilt/Agent-Observatory-${VERSION}-macOS.dmg"
-          test -x "prebuilt/agents"
+          test -s "prebuilt/agents"
+          chmod +x "prebuilt/agents"
 
       - name: Extract and verify signed app
         shell: bash
