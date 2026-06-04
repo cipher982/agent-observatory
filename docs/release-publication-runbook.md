@@ -15,8 +15,8 @@ notarized release QA.
 
 ## Required Release Secrets
 
-The manual **macOS Release** GitHub Actions workflow expects these repository
-secrets:
+The manual **macOS Release** GitHub Actions workflow consumes ordinary GitHub
+repository secrets:
 
 - `MACOS_SIGNING_CERT_P12_BASE64`
 - `MACOS_SIGNING_CERT_PASSWORD`
@@ -26,12 +26,9 @@ secrets:
 - `MACOS_NOTARY_APP_PASSWORD`
 - `MACOS_NOTARY_TEAM_ID`
 
-As of the 2026-06-03 release pass, the repository has the app/extension
-provisioning profile secrets and `MACOS_NOTARY_TEAM_ID`. The remaining required
-secrets are the Developer ID `.p12` + password and the Apple ID app-specific
-password pair. Other macOS repos under this account already use the
-`MACOS_NOTARY_*` naming convention, so Agent Observatory's release scripts
-support it directly.
+For David's operator workflow, Infisical is the canonical source and GitHub is
+the CI mirror. Keep the public repo contract on normal environment variables and
+GitHub secrets; use Infisical only to restore or resync those values.
 
 Check current state at any point:
 
@@ -40,6 +37,32 @@ make release-secrets-doctor
 ```
 
 The doctor should pass before running the GitHub **macOS Release** workflow.
+
+Check the Infisical source of truth and resync GitHub from it:
+
+```bash
+INFISICAL_RELEASE_PROJECT_ID=<infisical-project-id> \
+scripts/release-secrets.sh infisical-doctor
+
+INFISICAL_RELEASE_PROJECT_ID=<infisical-project-id> \
+scripts/release-secrets.sh github-from-infisical
+```
+
+The default Infisical location is `prod` at `/agent-observatory/release`; set
+`INFISICAL_RELEASE_ENV` or `INFISICAL_RELEASE_PATH` only if that changes.
+
+On the release Mac, prefer the staged ceremony script when refreshing everything
+from local trust material. It front-loads the human approval prompts, stores the
+secrets in Infisical, mirrors them to GitHub Actions, then runs both doctors:
+
+```bash
+INFISICAL_RELEASE_PROJECT_ID=<infisical-project-id> \
+OP_NOTARY_ITEM=<one-password-item-id-or-name> \
+scripts/stage-release-secrets-local.sh
+```
+
+If `MACOS_NOTARY_APPLE_ID`, `MACOS_NOTARY_APP_PASSWORD`, and
+`MACOS_NOTARY_TEAM_ID` are already exported, omit `OP_NOTARY_ITEM`.
 
 The provisioning profile secrets must correspond to the manual-signing profile
 names used by `app/project.yml`:
@@ -60,11 +83,25 @@ Set the two profile secrets from the release Mac:
 scripts/release-secrets.sh set-profiles
 ```
 
+Store the same profiles in Infisical:
+
+```bash
+INFISICAL_RELEASE_PROJECT_ID=<infisical-project-id> \
+scripts/release-secrets.sh set-infisical-profiles
+```
+
 Export the Developer ID certificate as a password-protected `.p12` using Keychain
 Access or `security export`, then set:
 
 ```bash
 scripts/release-secrets.sh set-signing-cert /path/to/developer-id-application.p12
+```
+
+Store the same Developer ID certificate in Infisical:
+
+```bash
+INFISICAL_RELEASE_PROJECT_ID=<infisical-project-id> \
+scripts/release-secrets.sh set-infisical-signing-cert /path/to/developer-id-application.p12
 ```
 
 Set notary credentials with the Apple-ID app-specific-password convention:
@@ -74,6 +111,16 @@ MACOS_NOTARY_APPLE_ID=<apple-id> \
 MACOS_NOTARY_APP_PASSWORD=<app-specific-password> \
 MACOS_NOTARY_TEAM_ID=M49WM6JSW8 \
 scripts/release-secrets.sh set-notary-from-env
+```
+
+Store the same notary credentials in Infisical:
+
+```bash
+INFISICAL_RELEASE_PROJECT_ID=<infisical-project-id> \
+MACOS_NOTARY_APPLE_ID=<apple-id> \
+MACOS_NOTARY_APP_PASSWORD=<app-specific-password> \
+MACOS_NOTARY_TEAM_ID=M49WM6JSW8 \
+scripts/release-secrets.sh set-infisical-notary-from-env
 ```
 
 `MACOS_NOTARY_TEAM_ID` may also be set independently to `M49WM6JSW8`; it is not
