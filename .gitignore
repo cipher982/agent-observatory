@@ -8,6 +8,7 @@
 DerivedData/
 .DS_Store
 xcuserdata/
+CLAUDE.md
 
 # wire capture state (derived facts; still local-only)
 backend/.observatory/
