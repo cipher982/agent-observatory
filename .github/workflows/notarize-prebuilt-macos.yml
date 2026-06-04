@@ -38,9 +38,6 @@ jobs:
             fi
           done
 
-      - name: Install packaging tools
-        run: brew install create-dmg imagemagick
-
       - name: Download draft release assets
         shell: bash
         run: |
@@ -84,14 +81,15 @@ jobs:
           xcrun stapler staple "dist/Agent Observatory.app"
           xcrun stapler validate "dist/Agent Observatory.app"
 
-      - name: Rebuild release archive and DMG
+      - name: Rebuild release archive and keep signed DMG
         shell: bash
         run: |
           set -euo pipefail
           zip_name="Agent-Observatory-${VERSION}-macOS.zip"
           dmg_name="Agent-Observatory-${VERSION}-macOS.dmg"
           (cd dist && ditto -c -k --keepParent "Agent Observatory.app" "$zip_name")
-          DMG_STYLE="$DMG_STYLE" scripts/make-dmg.sh "dist/Agent Observatory.app" "dist/$dmg_name" "Agent Observatory"
+          cp "prebuilt/$dmg_name" "dist/$dmg_name"
+          codesign --verify --strict "dist/$dmg_name"
 
       - name: Notarize and staple DMG
         shell: bash
