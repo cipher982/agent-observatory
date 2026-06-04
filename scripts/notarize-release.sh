@@ -6,6 +6,9 @@
 #   APP_STORE_CONNECT_KEY_ID=<key id>
 #   APP_STORE_CONNECT_API_KEY_P8=<raw .p8 contents or path to .p8 file>
 #   APP_STORE_CONNECT_ISSUER_ID=<issuer uuid>   # omit for Individual API keys
+#   MACOS_NOTARY_APPLE_ID=<apple id>
+#   MACOS_NOTARY_APP_PASSWORD=<app-specific password>
+#   MACOS_NOTARY_TEAM_ID=<team id>
 #
 # Optional:
 #   DMG_STYLE=headless|polished       default: headless
@@ -13,7 +16,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:-0.2.0}"
+VERSION="${VERSION:-0.3.0}"
 DIST="$ROOT/dist"
 APP_NAME="Agent Observatory.app"
 DMG_NAME="Agent-Observatory-${VERSION}-macOS.dmg"
@@ -57,8 +60,14 @@ elif [ -n "${APP_STORE_CONNECT_KEY_ID:-}" ] && [ -n "${APP_STORE_CONNECT_API_KEY
   if [ -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]; then
     notary_auth_args+=(--issuer "$APP_STORE_CONNECT_ISSUER_ID")
   fi
+elif [ -n "${MACOS_NOTARY_APPLE_ID:-}" ] && [ -n "${MACOS_NOTARY_APP_PASSWORD:-}" ] && [ -n "${MACOS_NOTARY_TEAM_ID:-}" ]; then
+  notary_auth_args=(
+    --apple-id "$MACOS_NOTARY_APPLE_ID"
+    --password "$MACOS_NOTARY_APP_PASSWORD"
+    --team-id "$MACOS_NOTARY_TEAM_ID"
+  )
 else
-  fail "set NOTARY_PROFILE=<notarytool profile> or APP_STORE_CONNECT_KEY_ID + APP_STORE_CONNECT_API_KEY_P8"
+  fail "set NOTARY_PROFILE, APP_STORE_CONNECT_KEY_ID + APP_STORE_CONNECT_API_KEY_P8, or MACOS_NOTARY_APPLE_ID + MACOS_NOTARY_APP_PASSWORD + MACOS_NOTARY_TEAM_ID"
 fi
 
 test -d "$APP_PATH" || fail "missing $APP_PATH (run make release first)"

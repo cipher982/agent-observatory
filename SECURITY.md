@@ -32,6 +32,8 @@ leaf certificates for inspected provider hosts.
 - Trust is added to the user's login keychain, never the System keychain.
 - Runtime trust env vars are additive (`NODE_EXTRA_CA_CERTS`,
   `CODEX_CA_CERTIFICATE`) and do not replace system roots.
+- Transparent full capture is gated by source identity and current runtime trust;
+  unsupported or stale-trust provider flows are tunneled without TLS termination.
 - `agents uninstall` removes the daemon, state directory, runtime env block, and
   Observatory CA trust entries.
 
@@ -50,8 +52,9 @@ of recent captures to drive the live feed and verified fact matching.
 
 ## Known Security-Relevant Limitations
 
-- Already-running agents may not inherit the additive trust env and should be
-  restarted after enabling capture.
+- Already-running agents may not inherit the additive trust env. Source-aware
+  policy tunnels stale-trust provider flows; a client TLS trust failure still
+  pauses future full-capture flows so provider traffic passes through.
 - HTTP/3/QUIC is not captured.
 - ECH/no-SNI flows fail open and are not captured.
 - Inspected provider requests are replayed upstream over HTTP/1.1.

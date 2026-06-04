@@ -81,13 +81,25 @@ func runMonitor(args []string) int {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		tlsFails, tlsFailHost := srv.ClientTLSFailures()
-		writeJSON(w, map[string]any{
+		bypassCount, lastBypass := srv.BypassStats()
+		paused, pauseReason := wire.CapturePaused()
+		body := map[string]any{
 			"ok": true, "mode": "monitor", "proxy": "http://" + proxyAddr, "caPath": srv.CAPath(),
-			// Non-zero means an agent rejected our leaf cert (untrusted CA) — i.e.
-			// capture is breaking that agent. The app surfaces this as a warning.
-			"clientTLSFailures": tlsFails,
-			"lastTLSFailHost":   tlsFailHost,
-		})
+			// Non-zero means an agent rejected our leaf cert (untrusted CA).
+			// The stable daemon also trips capturePaused so future flows pass through.
+			"clientTLSFailures":  tlsFails,
+			"lastTLSFailHost":    tlsFailHost,
+			"capturePaused":      paused,
+			"capturePauseReason": pauseReason,
+			"capturePausePath":   wire.CapturePausePath(),
+			"bypassCount":        bypassCount,
+		}
+		if bypassCount > 0 {
+			body["lastBypassHost"] = lastBypass.Host
+			body["lastBypassRuntime"] = lastBypass.Runtime
+			body["lastBypassReason"] = lastBypass.Reason
+		}
+		writeJSON(w, body)
 	})
 	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
 		if demo {
@@ -120,6 +132,23 @@ func runMonitor(args []string) int {
 		writeJSON(w, map[string]string{
 			"httpsProxy": "http://" + proxyAddr,
 			"caPath":     srv.CAPath(),
+		})
+	})
+	mux.HandleFunc("/api/coverage", func(w http.ResponseWriter, r *http.Request) {
+		captures := srv.Captures()
+		bypasses := srv.Bypasses()
+		recentBypasses := make([]map[string]any, 0, min(len(bypasses), 20))
+		start := max(0, len(bypasses)-20)
+		for _, b := range bypasses[start:] {
+			recentBypasses = append(recentBypasses, map[string]any{
+				"host": b.Host, "runtime": b.Runtime, "reason": b.Reason,
+				"source": b.SourceSigningID, "at": b.When.Format(time.RFC3339),
+			})
+		}
+		writeJSON(w, map[string]any{
+			"captures":       len(captures),
+			"bypasses":       len(bypasses),
+			"recentBypasses": recentBypasses,
 		})
 	})
 
@@ -155,10 +184,13 @@ func newLiveBus(srv *wire.Server) *liveBus { return &liveBus{srv: srv} }
 
 // streamEvent is the JSON shape pushed to the GUI per live request.
 type streamEvent struct {
-	Type        string   `json:"type"` // "capture"
+	Type        string   `json:"type"` // "capture" | "bypass"
 	Host        string   `json:"host"`
 	Endpoint    string   `json:"endpoint"`
 	Runtime     string   `json:"runtime"`
+	Status      string   `json:"status,omitempty"`
+	Reason      string   `json:"reason,omitempty"`
+	Source      string   `json:"source,omitempty"`
 	SystemChars int      `json:"systemChars"`
 	Parsed      bool     `json:"parsed"`
 	ToolCount   int      `json:"toolCount"`
@@ -178,6 +210,8 @@ func (b *liveBus) handleSSE(w http.ResponseWriter, r *http.Request) {
 
 	ch, unsub := b.srv.Subscribe()
 	defer unsub()
+	bypassCh, unsubBypass := b.srv.SubscribeBypasses()
+	defer unsubBypass()
 
 	// Initial hello so the client knows the stream is live.
 	fmt.Fprintf(w, "event: hello\ndata: {\"ok\":true}\n\n")
@@ -200,11 +234,23 @@ func (b *liveBus) handleSSE(w http.ResponseWriter, r *http.Request) {
 			ev := streamEvent{
 				Type: "capture", Host: c.Host, Endpoint: c.Endpoint,
 				Runtime: runtimeForHost(c.Host), SystemChars: len([]rune(c.SystemPrompt)),
-				Parsed: true, ToolCount: len(c.ToolNames), ToolNames: c.ToolNames,
+				Status: "captured", Parsed: true, ToolCount: len(c.ToolNames), ToolNames: c.ToolNames,
 				At: time.Now().Format(time.RFC3339),
 			}
 			data, _ := json.Marshal(ev)
 			fmt.Fprintf(w, "event: capture\ndata: %s\n\n", data)
+			flusher.Flush()
+		case b, ok := <-bypassCh:
+			if !ok {
+				return
+			}
+			ev := streamEvent{
+				Type: "bypass", Host: b.Host, Endpoint: "opaque tunnel",
+				Runtime: b.Runtime, Status: "bypassed", Reason: b.Reason, Source: b.SourceSigningID,
+				Parsed: false, At: b.When.Format(time.RFC3339),
+			}
+			data, _ := json.Marshal(ev)
+			fmt.Fprintf(w, "event: bypass\ndata: %s\n\n", data)
 			flusher.Flush()
 		}
 	}
@@ -217,9 +263,25 @@ func runtimeForHost(host string) string {
 		return "claude"
 	case strings.Contains(host, "openai"):
 		return "codex"
+	case strings.Contains(host, "generativelanguage"):
+		return "gemini"
 	default:
 		return "unknown"
 	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // runDemoInjector pushes realistic, varied synthetic captures through the live

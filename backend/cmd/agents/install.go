@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cipher982/agent-observatory/backend/internal/install"
+	"github.com/cipher982/agent-observatory/backend/internal/wire"
 )
 
 // realTarget builds the production install Target with real launchctl/launchd
@@ -78,6 +79,7 @@ func runUninstall(args []string) int {
 		fmt.Fprintf(os.Stderr, "uninstall completed with issues: %v\n", err)
 		return 1
 	}
+	_ = wire.ClearCapturePause()
 	fmt.Println("Agent Observatory uninstalled: daemon, local CA, keychain trust, and runtime CA env removed.")
 	fmt.Println("Open a new terminal for the env changes to clear.")
 	// The system extension can only be deactivated by the app that hosts it (a CLI

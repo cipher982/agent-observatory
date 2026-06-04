@@ -1,6 +1,6 @@
-.PHONY: qa backend-qa app-project app-build release release-polished notarize release-layout-qa release-qa v02-readiness v02-finalize release-open clean
+.PHONY: qa backend-qa app-project app-build release release-polished notarize release-layout-qa release-qa release-secrets-doctor v03-safe-capture-qa v03-installed-daemon-compat-qa v03-installed-ne-proof v02-readiness v02-finalize release-open clean
 
-VERSION ?= 0.2.0
+VERSION ?= 0.3.0
 DERIVED_DATA ?= /tmp/observatory-dd
 APP_CONFIGURATION ?= Debug
 DMG_STYLE ?= headless
@@ -43,8 +43,8 @@ release-polished: DMG_STYLE = polished
 release-polished: release
 
 notarize:
-	@if [ -z "$(NOTARY_PROFILE)" ] && { [ -z "$$APP_STORE_CONNECT_KEY_ID" ] || [ -z "$$APP_STORE_CONNECT_API_KEY_P8" ]; }; then \
-		echo "set NOTARY_PROFILE=<notarytool keychain profile> or APP_STORE_CONNECT_KEY_ID + APP_STORE_CONNECT_API_KEY_P8"; \
+	@if [ -z "$(NOTARY_PROFILE)" ] && { [ -z "$$APP_STORE_CONNECT_KEY_ID" ] || [ -z "$$APP_STORE_CONNECT_API_KEY_P8" ]; } && { [ -z "$$MACOS_NOTARY_APPLE_ID" ] || [ -z "$$MACOS_NOTARY_APP_PASSWORD" ] || [ -z "$$MACOS_NOTARY_TEAM_ID" ]; }; then \
+		echo "set NOTARY_PROFILE, APP_STORE_CONNECT_KEY_ID + APP_STORE_CONNECT_API_KEY_P8, or MACOS_NOTARY_APPLE_ID + MACOS_NOTARY_APP_PASSWORD + MACOS_NOTARY_TEAM_ID"; \
 		exit 2; \
 	fi
 	NOTARY_PROFILE="$(NOTARY_PROFILE)" DMG_STYLE="$(DMG_STYLE)" scripts/notarize-release.sh
@@ -54,6 +54,18 @@ release-layout-qa:
 
 release-qa:
 	bash scripts/release-qa.sh --notarized
+
+release-secrets-doctor:
+	bash scripts/release-secrets.sh doctor
+
+v03-safe-capture-qa:
+	bash scripts/v03-safe-capture-qa.sh
+
+v03-installed-daemon-compat-qa:
+	bash scripts/v03-installed-daemon-compat-qa.sh
+
+v03-installed-ne-proof:
+	bash scripts/v03-installed-ne-proof.sh
 
 v02-readiness:
 	bash scripts/v02-readiness-check.sh

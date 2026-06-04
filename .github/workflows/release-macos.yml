@@ -1,0 +1,124 @@
+name: macOS Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version
+        required: true
+        default: "0.3.0"
+      stage_release:
+        description: Create/update the matching GitHub draft release
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, notarize, and package
+    runs-on: macos-26
+    env:
+      VERSION: ${{ inputs.version }}
+      DMG_STYLE: headless
+      MACOS_SIGNING_CERT_P12_BASE64: ${{ secrets.MACOS_SIGNING_CERT_P12_BASE64 }}
+      MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
+      MACOS_PROVISIONING_PROFILE_APP_BASE64: ${{ secrets.MACOS_PROVISIONING_PROFILE_APP_BASE64 }}
+      MACOS_PROVISIONING_PROFILE_EXT_BASE64: ${{ secrets.MACOS_PROVISIONING_PROFILE_EXT_BASE64 }}
+      MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+      MACOS_NOTARY_APP_PASSWORD: ${{ secrets.MACOS_NOTARY_APP_PASSWORD }}
+      MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Release secret preflight
+        run: bash scripts/release-secrets.sh ci-preflight
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Install packaging tools
+        run: brew install xcodegen create-dmg imagemagick
+
+      - name: Show tool versions
+        run: |
+          xcodebuild -version
+          go version
+          xcodegen --version
+          create-dmg --version || true
+          magick -version | head -n 2
+
+      - name: Import signing material
+        run: bash scripts/ci-import-macos-signing.sh
+
+      - name: Build release artifacts
+        run: make release
+
+      - name: Verify source-aware safe capture
+        run: make v03-safe-capture-qa
+
+      - name: Verify installed daemon compatibility
+        run: |
+          set -euo pipefail
+          app="$PWD/dist/Agent Observatory.app"
+          "$app/Contents/Resources/agents" install
+          cleanup() {
+            "$app/Contents/Resources/agents" uninstall || true
+          }
+          trap cleanup EXIT
+          APP_PATH="$app" make v03-installed-daemon-compat-qa
+
+      - name: Notarize and staple
+        run: make notarize
+
+      - name: Verify notarized artifacts
+        run: make release-qa
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-observatory-${{ inputs.version }}-macos
+          path: |
+            dist/Agent-Observatory-${{ inputs.version }}-macOS.dmg
+            dist/Agent-Observatory-${{ inputs.version }}-macOS.zip
+            dist/agents
+            dist/SHA256SUMS
+
+      - name: Create or update draft release
+        if: ${{ inputs.stage_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          title="Agent Observatory v${VERSION}"
+          notes="docs/release-v0.3-draft.md"
+          if [ ! -f "$notes" ]; then
+            notes="docs/v0.3-launch-readiness.md"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" \
+              "dist/Agent-Observatory-${VERSION}-macOS.dmg" \
+              "dist/Agent-Observatory-${VERSION}-macOS.zip" \
+              "dist/agents" \
+              "dist/SHA256SUMS" \
+              --clobber
+          else
+            gh release create "$tag" \
+              --draft \
+              --latest=false \
+              --target "$GITHUB_SHA" \
+              --title "$title" \
+              --notes-file "$notes" \
+              "dist/Agent-Observatory-${VERSION}-macOS.dmg" \
+              "dist/Agent-Observatory-${VERSION}-macOS.zip" \
+              "dist/agents" \
+              "dist/SHA256SUMS"
+          fi

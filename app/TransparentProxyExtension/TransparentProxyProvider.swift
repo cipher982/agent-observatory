@@ -71,7 +71,8 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
               remote.port == "443" else {
             return false
         }
-        let source = flow.metaData.sourceAppSigningIdentifier
+        let sourceMeta = SourceMetadata.from(flow.metaData)
+        let source = sourceMeta.signingIdentifier
         // Never intercept our own daemon's upstream connections (avoids the loop).
         if bypassSourceIdentifiers.contains(source) {
             log.log("bypass own flow source=\(source, privacy: .public) -> \(remote.hostname, privacy: .public)")
@@ -82,11 +83,15 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
             log.log("dev-scope pass-through source=\(source, privacy: .public) -> \(remote.hostname, privacy: .public)")
             return false
         }
-        open(tcp, remote: remote)
+        if CapturePauseGate.isPaused() {
+            log.log("capture paused; pass-through source=\(source, privacy: .public) -> \(remote.hostname, privacy: .public)")
+            return false
+        }
+        open(tcp, remote: remote, source: sourceMeta)
         return true
     }
 
-    private func open(_ flow: NEAppProxyTCPFlow, remote: NWHostEndpoint) {
+    private func open(_ flow: NEAppProxyTCPFlow, remote: NWHostEndpoint, source: SourceMetadata) {
         flow.open(withLocalEndpoint: nil) { [weak self] err in
             guard let self else { return }
             if let err {
@@ -94,13 +99,13 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
                 self.close(flow, nil)
                 return
             }
-            self.peekAndRoute(flow, remote: remote, accumulated: Data())
+            self.peekAndRoute(flow, remote: remote, source: source, accumulated: Data())
         }
     }
 
     // Read until we can decide SNI, then route. Bounds the peek so a slow/odd
     // client can't make us buffer unboundedly.
-    private func peekAndRoute(_ flow: NEAppProxyTCPFlow, remote: NWHostEndpoint, accumulated: Data) {
+    private func peekAndRoute(_ flow: NEAppProxyTCPFlow, remote: NWHostEndpoint, source: SourceMetadata, accumulated: Data) {
         flow.readData { [weak self] data, err in
             guard let self else { return }
             guard let data, !data.isEmpty, err == nil else { self.close(flow, nil); return }
@@ -108,10 +113,10 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
 
             switch SNI.parse(buf) {
             case .needMore where buf.count < 8 * 1024:
-                self.peekAndRoute(flow, remote: remote, accumulated: buf)
+                self.peekAndRoute(flow, remote: remote, source: source, accumulated: buf)
             case .host(let sni) where self.allow.contains(sni):
                 log.log("capture flow sni=\(sni, privacy: .public)")
-                self.relayViaGoProxy(flow, firstBytes: buf, host: sni, remote: remote)
+                self.relayViaGoProxy(flow, firstBytes: buf, host: sni, remote: remote, source: source)
             default:
                 // No SNI, not allowlisted, or peek budget exhausted: pass through
                 // by relaying DIRECT to the real destination (we already took it).
@@ -124,7 +129,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
     // is down or rejects the CONNECT (e.g. the daemon isn't running), fail OPEN by
     // relaying direct to the real upstream — capture is best-effort, but we must
     // never break the agent's request just because Observatory isn't listening.
-    private func relayViaGoProxy(_ flow: NEAppProxyTCPFlow, firstBytes: Data, host: String, remote: NWHostEndpoint) {
+    private func relayViaGoProxy(_ flow: NEAppProxyTCPFlow, firstBytes: Data, host: String, remote: NWHostEndpoint, source: SourceMetadata) {
         let conn = NWConnection(
             host: NWEndpoint.Host(goProxyHost),
             port: NWEndpoint.Port(rawValue: goProxyPort)!,
@@ -147,7 +152,14 @@ final class TransparentProxyProvider: NETransparentProxyProvider {
         let timeout = DispatchWorkItem { failOpen("CONNECT timed out") }
         DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: timeout)
 
-        let connectReq = "CONNECT \(host):443 HTTP/1.1\r\nHost: \(host):443\r\n\r\n"
+        var lines = [
+            "CONNECT \(host):443 HTTP/1.1",
+            "Host: \(host):443"
+        ]
+        for (name, value) in source.connectHeaders {
+            lines.append("\(name): \(value)")
+        }
+        let connectReq = lines.joined(separator: "\r\n") + "\r\n\r\n"
         conn.send(content: Data(connectReq.utf8), completion: .contentProcessed { [weak self] sendErr in
             guard let self else { return }
             if sendErr != nil { failOpen("unreachable"); return }

@@ -9,8 +9,8 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    MARKETING_VERSION: "0.2.0"
-    CURRENT_PROJECT_VERSION: "6"
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "7"
     ENABLE_HARDENED_RUNTIME: YES
     # Notarization requires a secure timestamp and forbids the debug-only
     # get-task-allow entitlement. xcodebuild's non-archive default omits the
@@ -137,6 +137,7 @@ targets:
         PROVISIONING_PROFILE_SPECIFIER: "Agent Observatory Ext DevID"
         ENABLE_HARDENED_RUNTIME: YES
         SWIFT_VERSION: "5.0"
+        OTHER_LDFLAGS: "$(inherited) -lbsm"
 
   ObservatoryTests:
     type: bundle.unit-test
@@ -148,7 +149,11 @@ targets:
       # be linked/@testable-imported, so we build them here rather than import.
       - path: TransparentProxyExtension/SNI.swift
       - path: TransparentProxyExtension/Allowlist.swift
+      - path: TransparentProxyExtension/CapturePauseGate.swift
+      - path: TransparentProxyExtension/SourceMetadata.swift
+      - path: Observatory/ActivationErrorFormatter.swift
     settings:
       base:
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: YES
+        OTHER_LDFLAGS: "$(inherited) -lbsm"

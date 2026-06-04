@@ -30,6 +30,17 @@ type Capture struct {
 	When         time.Time
 }
 
+// Bypass is one provider flow that Observatory deliberately did NOT
+// TLS-terminate. It is coverage evidence, not request content.
+type Bypass struct {
+	Host            string
+	Runtime         string
+	Reason          string
+	SourceSigningID string
+	SourcePID       int
+	When            time.Time
+}
+
 // Proxy is an HTTPS-intercepting forward proxy. Provider flows reach it via the
 // NetworkExtension relay (or HTTPS_PROXY in the dev `agents run` path) as an
 // HTTP CONNECT. For allowlisted hosts it terminates TLS using a per-host leaf
@@ -40,14 +51,16 @@ type Proxy struct {
 	ca        *CA
 	logger    *log.Logger
 	OnCapture func(Capture)
+	OnBypass  func(Bypass)
 	// OnClientHandshakeError fires when a CLIENT (the agent) fails the TLS
 	// handshake against our leaf — almost always "the agent doesn't trust our CA"
-	// (UnknownIssuer). The daemon uses this to warn that capture is breaking an
-	// agent rather than silently degrading it.
+	// (UnknownIssuer). The stable daemon uses this to pause future capture flows
+	// so a trust mismatch does not repeatedly break the agent.
 	OnClientHandshakeError func(host string, err error)
 
-	upstreamTLS *tls.Config
-	inspectHost func(host string) bool
+	upstreamTLS   *tls.Config
+	inspectHost   func(host string) bool
+	capturePolicy *CapturePolicy
 }
 
 // NewProxy builds an intercepting proxy backed by the given CA.
@@ -56,10 +69,11 @@ func NewProxy(ca *CA, logger *log.Logger) *Proxy {
 		logger = log.Default()
 	}
 	return &Proxy{
-		ca:          ca,
-		logger:      logger,
-		upstreamTLS: &tls.Config{MinVersion: tls.VersionTLS12},
-		inspectHost: defaultInspectHost,
+		ca:            ca,
+		logger:        logger,
+		upstreamTLS:   &tls.Config{MinVersion: tls.VersionTLS12},
+		inspectHost:   defaultInspectHost,
+		capturePolicy: NewCapturePolicy(ca.PEMPath()),
 	}
 }
 
@@ -76,6 +90,12 @@ func (p *Proxy) SetInspectHost(fn func(host string) bool) {
 		return
 	}
 	p.inspectHost = fn
+}
+
+// SetCapturePolicy overrides the source/trust gate for local TLS inspection.
+// Tests use this to avoid depending on host process state.
+func (p *Proxy) SetCapturePolicy(policy *CapturePolicy) {
+	p.capturePolicy = policy
 }
 
 // ServeHTTP handles CONNECT (the only method agents use for HTTPS upstreams).
@@ -113,6 +133,21 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	defer clientConn.Close()
 
 	if !p.inspectHost(host) {
+		p.tunnel(host, port, clientConn)
+		return
+	}
+
+	meta := flowMetadataFromRequest(r)
+	decision := p.capturePolicy.Decide(meta)
+	if !decision.inspect {
+		p.logger.Printf("[wire] %s -> opaque tunnel (%s)", host, decision.reason)
+		if p.OnBypass != nil {
+			p.OnBypass(Bypass{
+				Host: host, Runtime: decision.runtime, Reason: decision.reason,
+				SourceSigningID: meta.SourceSigningID, SourcePID: meta.SourcePID,
+				When: time.Now(),
+			})
+		}
 		p.tunnel(host, port, clientConn)
 		return
 	}
@@ -289,6 +324,13 @@ func (p *Proxy) relayWebSocket(host, port string, req *http.Request, br *bufio.R
 	// the client keeps working. We don't parse the (masked/compressed) frames, so
 	// this is pass-through only — no capture — but it never breaks the flow.
 	p.logger.Printf("[wire] %s %s -> websocket upgrade with no HTTP fallback; relaying transparently (no capture)", host, req.URL.Path)
+	if p.OnBypass != nil {
+		p.OnBypass(Bypass{
+			Host: host, Runtime: runtimeForProviderHost(host),
+			Reason: "websocket endpoint has no verified HTTP fallback",
+			When:   time.Now(),
+		})
+	}
 	p.tunnelWebSocket(host, port, req, br, client)
 }
 
@@ -429,7 +471,7 @@ func stripPort(hostport string) string {
 func defaultInspectHost(host string) bool {
 	h := strings.TrimSuffix(strings.ToLower(host), ".")
 	switch {
-	case h == "api.openai.com", h == "api.anthropic.com":
+	case h == "api.openai.com", h == "api.anthropic.com", h == "generativelanguage.googleapis.com":
 		return true
 	case strings.Contains(h, "bedrock-runtime.") && strings.HasSuffix(h, ".amazonaws.com"):
 		return true
@@ -437,6 +479,20 @@ func defaultInspectHost(host string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func runtimeForProviderHost(host string) string {
+	h := strings.TrimSuffix(strings.ToLower(host), ".")
+	switch {
+	case h == "api.openai.com":
+		return "codex"
+	case h == "generativelanguage.googleapis.com":
+		return "gemini"
+	case h == "api.anthropic.com", strings.Contains(h, "bedrock-runtime."), strings.HasPrefix(h, "aws-external-anthropic."):
+		return "claude"
+	default:
+		return "unknown"
 	}
 }
 

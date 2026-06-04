@@ -9,9 +9,13 @@ import Observation
 // A single live, in-flight LLM request captured on the wire.
 struct LiveEvent: Identifiable, Codable {
     let id = UUID()
+    let type: String
     let host: String
     let endpoint: String
     let runtime: String
+    let status: String?
+    let reason: String?
+    let source: String?
     let systemChars: Int
     let parsed: Bool
     let toolCount: Int
@@ -19,8 +23,10 @@ struct LiveEvent: Identifiable, Codable {
     let at: String
 
     private enum CodingKeys: String, CodingKey {
-        case host, endpoint, runtime, systemChars, parsed, toolCount, toolNames, at
+        case type, host, endpoint, runtime, status, reason, source, systemChars, parsed, toolCount, toolNames, at
     }
+
+    var bypassed: Bool { type == "bypass" || status == "bypassed" }
 }
 
 enum InstallState: Equatable {
@@ -71,8 +77,8 @@ final class EngineClient {
     private(set) var installStatusText = "Install status not checked yet"
     private(set) var streamConnected = false
     private(set) var pulse = 0                           // increments on each live event (drives animations)
-    // Non-nil when an agent rejected the capture CA (untrusted-issuer) — i.e.
-    // capture is breaking that agent. Surfaced as a warning in live mode.
+    // Non-nil when capture is paused or an agent rejected the capture CA.
+    // Surfaced as a warning in live mode.
     private(set) var captureWarning: String?
 
     // Live capture is served by the installed launchd daemon on the fixed ports.
@@ -313,10 +319,19 @@ final class EngineClient {
               let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return false }
         // Surface the daemon's "an agent rejected our CA" signal in live mode.
         if mode == .live,
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let fails = obj["clientTLSFailures"] as? Int, fails > 0 {
-            let host = (obj["lastTLSFailHost"] as? String) ?? "a provider"
-            captureWarning = "An agent rejected the capture certificate for \(host) (\(fails)×). Restart that agent so it picks up the trusted CA, or disable capture."
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let paused = obj["capturePaused"] as? Bool, paused {
+                captureWarning = "Live capture paused after an agent rejected the capture certificate. Provider traffic is passing through; restart agents, then disable and re-enable capture to resume."
+            } else if let fails = obj["clientTLSFailures"] as? Int, fails > 0 {
+                let host = (obj["lastTLSFailHost"] as? String) ?? "a provider"
+                captureWarning = "An agent rejected the capture certificate for \(host) (\(fails)×). Restart that agent so it picks up the trusted CA, or disable capture."
+            } else if let bypasses = obj["bypassCount"] as? Int, bypasses > 0,
+                      let reason = obj["lastBypassReason"] as? String {
+                let host = (obj["lastBypassHost"] as? String) ?? "provider traffic"
+                captureWarning = "Some provider traffic is passing through without body capture: \(host) — \(reason)."
+            } else {
+                captureWarning = nil
+            }
         } else if mode != .live {
             captureWarning = nil
         }
@@ -371,7 +386,8 @@ final class EngineClient {
                     eventName = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
                 } else if line.hasPrefix("data:") {
                     let json = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                    if eventName == "capture", let data = json.data(using: .utf8),
+                    if (eventName == "capture" || eventName == "bypass"),
+                       let data = json.data(using: .utf8),
                        let ev = try? JSONDecoder().decode(LiveEvent.self, from: data) {
                         liveEvents.insert(ev, at: 0)
                         if liveEvents.count > 50 { liveEvents.removeLast() }

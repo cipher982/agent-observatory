@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,6 +56,11 @@ func TestParseBodyVariants(t *testing.T) {
 			name: "codex-responses", host: "api.openai.com", path: "/v1/responses",
 			body:     `{"instructions":"sys","input":[{"role":"user","content":[{"type":"input_text","text":"...project instructions..."}]}],"tools":[{"type":"function","name":"exec"}]}`,
 			wantTool: true, wantSystem: "sys",
+		},
+		{
+			name: "gemini-generate-content", host: "generativelanguage.googleapis.com", path: "/v1beta/models/gemini-2.5-pro:streamGenerateContent",
+			body:     `{"systemInstruction":{"parts":[{"text":"gemini system"}]},"contents":[{"role":"user","parts":[{"text":"project instructions"}]}],"tools":[{"functionDeclarations":[{"name":"read_file"}]}]}`,
+			wantTool: true, wantSystem: "gemini system",
 		},
 	}
 	for _, c := range cases {
@@ -239,6 +245,404 @@ func TestNonProviderHostTunnelsWithoutCapture(t *testing.T) {
 	}
 }
 
+type fakeProcessLookup map[int]processInfo
+
+func (f fakeProcessLookup) LookupProcess(pid int) (processInfo, error) {
+	if p, ok := f[pid]; ok {
+		return p, nil
+	}
+	return processInfo{Env: map[string]string{}}, nil
+}
+
+func TestTransparentSupportedSourceIsCaptured(t *testing.T) {
+	tmp := t.TempDir()
+	const reqBody = `{"system":"captured safe source","tools":[{"name":"safe_tool"}],"messages":[]}`
+	var gotUpstreamBody []byte
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUpstreamBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+	upURL, _ := url.Parse(upstream.URL)
+	upHost, upPort, _ := net.SplitHostPort(upURL.Host)
+
+	srv, err := NewServer(tmp, log.New(io.Discard, "", 0), time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetInspectHost(func(string) bool { return true })
+	srv.SetCapturePolicy(&CapturePolicy{
+		caPath: srv.CAPath(),
+		lookup: fakeProcessLookup{
+			1234: {Command: "claude NODE_EXTRA_CA_CERTS=" + srv.CAPath(), Env: map[string]string{"NODE_EXTRA_CA_CERTS": srv.CAPath()}},
+		},
+	})
+	upRoots := x509.NewCertPool()
+	upRoots.AddCert(upstream.Certificate())
+	srv.SetUpstreamTLS(&tls.Config{RootCAs: upRoots, MinVersion: tls.VersionTLS12})
+	proxyAddr, err := srv.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	caPEM, _ := os.ReadFile(srv.CAPath())
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(caPEM)
+	roots.AddCert(upstream.Certificate())
+	proxyURL, _ := url.Parse("http://" + proxyAddr)
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+			ProxyConnectHeader: http.Header{
+				headerTransparentFlow: {"1"},
+				headerSourceSigningID: {"com.anthropic.claude-code"},
+				headerSourcePID:       {"1234"},
+			},
+			TLSClientConfig: &tls.Config{RootCAs: roots},
+		},
+		Timeout: 10 * time.Second,
+	}
+
+	target := fmt.Sprintf("https://%s:%s/v1/messages", upHost, upPort)
+	resp, err := client.Post(target, "application/json", bytes.NewReader([]byte(reqBody)))
+	if err != nil {
+		t.Fatalf("trusted transparent source failed: %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+
+	if string(gotUpstreamBody) != reqBody {
+		t.Errorf("upstream body mismatch:\n got: %s\nwant: %s", gotUpstreamBody, reqBody)
+	}
+	caps := srv.Captures()
+	if len(caps) != 1 {
+		t.Fatalf("captures = %d, want 1", len(caps))
+	}
+	if caps[0].SystemPrompt != "captured safe source" {
+		t.Fatalf("system prompt = %q", caps[0].SystemPrompt)
+	}
+}
+
+func TestTransparentUnknownProviderSourceTunnelsWithoutCapture(t *testing.T) {
+	tmp := t.TempDir()
+	const reqBody = `{"system":"must stay opaque"}`
+	var gotUpstreamBody []byte
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUpstreamBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+	upURL, _ := url.Parse(upstream.URL)
+
+	srv, err := NewServer(tmp, log.New(io.Discard, "", 0), time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetInspectHost(func(string) bool { return true })
+	srv.SetCapturePolicy(&CapturePolicy{caPath: srv.CAPath(), lookup: fakeProcessLookup{}})
+	bypassCh, unsubBypass := srv.SubscribeBypasses()
+	defer unsubBypass()
+	proxyAddr, err := srv.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(upstream.Certificate())
+	proxyURL, _ := url.Parse("http://" + proxyAddr)
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+			ProxyConnectHeader: http.Header{
+				headerTransparentFlow: {"1"},
+				headerSourceSigningID: {"com.example.custom-tool"},
+				headerSourcePID:       {"9999"},
+			},
+			// Deliberately do NOT trust the Observatory CA. If the proxy tries to
+			// MITM this unknown source, the request fails. The safe behavior is an
+			// opaque tunnel to the upstream's real cert.
+			TLSClientConfig: &tls.Config{RootCAs: roots},
+		},
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Post(upURL.String()+"/v1/messages", "application/json", bytes.NewReader([]byte(reqBody)))
+	if err != nil {
+		t.Fatalf("unknown transparent source should tunnel, got error: %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+
+	if string(gotUpstreamBody) != reqBody {
+		t.Errorf("upstream body mismatch:\n got: %s\nwant: %s", gotUpstreamBody, reqBody)
+	}
+	if caps := srv.Captures(); len(caps) != 0 {
+		t.Fatalf("unknown transparent source should not be captured, got %+v", caps)
+	}
+	bypasses := srv.Bypasses()
+	if len(bypasses) != 1 {
+		t.Fatalf("bypasses = %d, want 1", len(bypasses))
+	}
+	if !strings.Contains(bypasses[0].Reason, "unsupported") {
+		t.Fatalf("bypass reason = %q, want unsupported source", bypasses[0].Reason)
+	}
+	if bypasses[0].SourceSigningID != "com.example.custom-tool" {
+		t.Fatalf("bypass source = %q", bypasses[0].SourceSigningID)
+	}
+	select {
+	case ev := <-bypassCh:
+		if ev.SourceSigningID != "com.example.custom-tool" {
+			t.Fatalf("subscribed bypass source = %q", ev.SourceSigningID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for subscribed bypass event")
+	}
+}
+
+func TestStableServerMissingTransparentMetadataTunnelsWithoutCapture(t *testing.T) {
+	tmp := t.TempDir()
+	const reqBody = `{"system":"old extension or malformed relay must stay opaque"}`
+	var gotUpstreamBody []byte
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUpstreamBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+	upURL, _ := url.Parse(upstream.URL)
+
+	srv, err := NewServerStableCA(tmp, log.New(io.Discard, "", 0), time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetInspectHost(func(string) bool { return true })
+	proxyAddr, err := srv.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(upstream.Certificate())
+	proxyURL, _ := url.Parse("http://" + proxyAddr)
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+			// No transparent metadata headers and no Observatory CA trust. This
+			// models a stale pre-0.3 extension talking to the 0.3 installed daemon.
+			TLSClientConfig: &tls.Config{RootCAs: roots},
+		},
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Post(upURL.String()+"/v1/messages", "application/json", bytes.NewReader([]byte(reqBody)))
+	if err != nil {
+		t.Fatalf("stable daemon without source metadata should tunnel, got error: %v", err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+
+	if string(gotUpstreamBody) != reqBody {
+		t.Errorf("upstream body mismatch:\n got: %s\nwant: %s", gotUpstreamBody, reqBody)
+	}
+	if caps := srv.Captures(); len(caps) != 0 {
+		t.Fatalf("missing metadata should not be captured in stable mode, got %+v", caps)
+	}
+	bypasses := srv.Bypasses()
+	if len(bypasses) != 1 {
+		t.Fatalf("bypasses = %d, want 1", len(bypasses))
+	}
+	if !strings.Contains(bypasses[0].Reason, "missing transparent source metadata") {
+		t.Fatalf("bypass reason = %q", bypasses[0].Reason)
+	}
+}
+
+func TestTransparentSupportedSourceWithStaleTrustTunnelsWithoutCapture(t *testing.T) {
+	cases := []struct {
+		name, signingID, command, envKey, envValue, runtime string
+	}{
+		{
+			name:      "claude",
+			signingID: "com.anthropic.claude-code",
+			command:   "claude NODE_EXTRA_CA_CERTS=/tmp/old-ca.pem",
+			envKey:    "NODE_EXTRA_CA_CERTS",
+			envValue:  "/tmp/old-ca.pem",
+			runtime:   "claude",
+		},
+		{
+			name:      "codex",
+			signingID: "codex",
+			command:   "codex CODEX_CA_CERTIFICATE=/tmp/old-ca.pem",
+			envKey:    "CODEX_CA_CERTIFICATE",
+			envValue:  "/tmp/old-ca.pem",
+			runtime:   "codex",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.WriteHeader(200)
+				_, _ = w.Write([]byte(`{"ok":true}`))
+			}))
+			defer upstream.Close()
+			upURL, _ := url.Parse(upstream.URL)
+
+			srv, err := NewServer(tmp, log.New(io.Discard, "", 0), time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC))
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv.SetInspectHost(func(string) bool { return true })
+			srv.SetCapturePolicy(&CapturePolicy{
+				caPath: srv.CAPath(),
+				lookup: fakeProcessLookup{
+					1234: {Command: tc.command, Env: map[string]string{tc.envKey: tc.envValue}},
+				},
+			})
+			proxyAddr, err := srv.Listen(0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer srv.Close()
+
+			roots := x509.NewCertPool()
+			roots.AddCert(upstream.Certificate())
+			proxyURL, _ := url.Parse("http://" + proxyAddr)
+			client := &http.Client{
+				Transport: &http.Transport{
+					Proxy: http.ProxyURL(proxyURL),
+					ProxyConnectHeader: http.Header{
+						headerTransparentFlow: {"1"},
+						headerSourceSigningID: {tc.signingID},
+						headerSourcePID:       {"1234"},
+					},
+					// Deliberately do NOT trust the Observatory CA. If a stale
+					// runtime is inspected instead of tunneled, this request fails.
+					TLSClientConfig: &tls.Config{RootCAs: roots},
+				},
+				Timeout: 10 * time.Second,
+			}
+
+			resp, err := client.Post(upURL.String()+"/v1/messages", "application/json", bytes.NewReader([]byte(`{"system":"stale"}`)))
+			if err != nil {
+				t.Fatalf("stale %s runtime should tunnel, got error: %v", tc.name, err)
+			}
+			defer resp.Body.Close()
+			_, _ = io.ReadAll(resp.Body)
+			if caps := srv.Captures(); len(caps) != 0 {
+				t.Fatalf("stale %s runtime should not be captured, got %+v", tc.name, caps)
+			}
+			bypasses := srv.Bypasses()
+			if len(bypasses) != 1 {
+				t.Fatalf("bypasses = %d, want 1", len(bypasses))
+			}
+			if !strings.Contains(bypasses[0].Reason, tc.envKey+" missing or stale") {
+				t.Fatalf("bypass reason = %q, want stale %s", bypasses[0].Reason, tc.envKey)
+			}
+			if bypasses[0].Runtime != tc.runtime {
+				t.Fatalf("bypass runtime = %q, want %s", bypasses[0].Runtime, tc.runtime)
+			}
+			if bypasses[0].SourceSigningID != tc.signingID {
+				t.Fatalf("bypass source = %q, want %s", bypasses[0].SourceSigningID, tc.signingID)
+			}
+		})
+	}
+}
+
+func TestTransparentPolicyRecognizesCodexAndGemini(t *testing.T) {
+	const ca = "/tmp/observatory-ca.pem"
+	policy := &CapturePolicy{caPath: ca, lookup: fakeProcessLookup{
+		10: {Command: "codex CODEX_CA_CERTIFICATE=" + ca, Env: map[string]string{"CODEX_CA_CERTIFICATE": ca}},
+		11: {Command: "/opt/homebrew/bin/node /opt/homebrew/bin/gemini NODE_EXTRA_CA_CERTS=" + ca, Env: map[string]string{"NODE_EXTRA_CA_CERTS": ca}},
+		12: {Command: "/opt/homebrew/bin/node /tmp/custom.js NODE_EXTRA_CA_CERTS=" + ca, Env: map[string]string{"NODE_EXTRA_CA_CERTS": ca}},
+	}}
+	if got := policy.Decide(FlowMetadata{Transparent: true, SourceSigningID: "codex", SourcePID: 10}); !got.inspect || got.runtime != "codex" {
+		t.Fatalf("codex decision = %+v, want inspect", got)
+	}
+	if got := policy.Decide(FlowMetadata{Transparent: true, SourceSigningID: "node-abcdef", SourcePID: 11}); !got.inspect || got.runtime != "gemini" {
+		t.Fatalf("gemini decision = %+v, want inspect", got)
+	}
+	if got := policy.Decide(FlowMetadata{Transparent: true, SourceSigningID: "node-abcdef", SourcePID: 12}); got.inspect {
+		t.Fatalf("custom node decision = %+v, want tunnel", got)
+	}
+}
+
+func TestTransparentPolicyBypassesMissingOrStaleRuntimeTrust(t *testing.T) {
+	const ca = "/tmp/observatory-ca.pem"
+	cases := []struct {
+		name, signingID, command, wantRuntime, wantReason string
+		env                                               map[string]string
+	}{
+		{
+			name:        "claude missing node ca",
+			signingID:   "com.anthropic.claude-code",
+			command:     "claude",
+			wantRuntime: "claude",
+			wantReason:  "NODE_EXTRA_CA_CERTS missing or stale",
+		},
+		{
+			name:        "claude stale node ca",
+			signingID:   "com.anthropic.claude-code",
+			command:     "claude NODE_EXTRA_CA_CERTS=/tmp/old.pem",
+			env:         map[string]string{"NODE_EXTRA_CA_CERTS": "/tmp/old.pem"},
+			wantRuntime: "claude",
+			wantReason:  "NODE_EXTRA_CA_CERTS missing or stale",
+		},
+		{
+			name:        "codex missing codex ca",
+			signingID:   "codex",
+			command:     "codex",
+			wantRuntime: "codex",
+			wantReason:  "CODEX_CA_CERTIFICATE missing or stale",
+		},
+		{
+			name:        "codex stale codex ca",
+			signingID:   "codex",
+			command:     "codex CODEX_CA_CERTIFICATE=/tmp/old.pem",
+			env:         map[string]string{"CODEX_CA_CERTIFICATE": "/tmp/old.pem"},
+			wantRuntime: "codex",
+			wantReason:  "CODEX_CA_CERTIFICATE missing or stale",
+		},
+		{
+			name:        "gemini missing node ca",
+			signingID:   "node-abcdef",
+			command:     "/opt/homebrew/bin/node /opt/homebrew/bin/gemini",
+			wantRuntime: "gemini",
+			wantReason:  "NODE_EXTRA_CA_CERTS missing or stale",
+		},
+		{
+			name:        "gemini stale node ca",
+			signingID:   "node-abcdef",
+			command:     "/opt/homebrew/bin/node /opt/homebrew/bin/gemini NODE_EXTRA_CA_CERTS=/tmp/old.pem",
+			env:         map[string]string{"NODE_EXTRA_CA_CERTS": "/tmp/old.pem"},
+			wantRuntime: "gemini",
+			wantReason:  "NODE_EXTRA_CA_CERTS missing or stale",
+		},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			policy := &CapturePolicy{caPath: ca, lookup: fakeProcessLookup{
+				i + 1: {Command: tc.command, Env: tc.env},
+			}}
+			got := policy.Decide(FlowMetadata{Transparent: true, SourceSigningID: tc.signingID, SourcePID: i + 1})
+			if got.inspect {
+				t.Fatalf("decision = %+v, want tunnel", got)
+			}
+			if got.runtime != tc.wantRuntime {
+				t.Fatalf("runtime = %q, want %q", got.runtime, tc.wantRuntime)
+			}
+			if got.reason != tc.wantReason {
+				t.Fatalf("reason = %q, want %q", got.reason, tc.wantReason)
+			}
+		})
+	}
+}
+
 // TestStreamingResponseIsNotBuffered proves the regression fix for the buffered
 // forward: an inspected upstream that streams its body in chunks (think SSE /
 // stream:true) must reach the client incrementally, not be withheld until the
@@ -331,15 +735,15 @@ func TestDefaultInspectHostContract(t *testing.T) {
 		"api.openai.com",
 		"bedrock-runtime.us-east-1.amazonaws.com",
 		"aws-external-anthropic.us-east-1.api.aws",
-		"API.ANTHROPIC.COM", // case-insensitive
+		"API.ANTHROPIC.COM",  // case-insensitive
 		"api.anthropic.com.", // trailing dot
 	}
 	deny := []string{
 		"example.com",
 		"evil-amazonaws.com",
 		"amazonaws.com.attacker.com",
-		"s3.amazonaws.com",                  // AWS but not bedrock
-		"aws-external-anthropic.evil.com",   // right prefix, wrong suffix
+		"s3.amazonaws.com",                // AWS but not bedrock
+		"aws-external-anthropic.evil.com", // right prefix, wrong suffix
 		"notanthropic.com",
 		"api.openai.com.evil.com", // not exact
 	}
@@ -352,6 +756,73 @@ func TestDefaultInspectHostContract(t *testing.T) {
 		if defaultInspectHost(h) {
 			t.Errorf("defaultInspectHost(%q) = true, want false", h)
 		}
+	}
+}
+
+func TestStableServerPausesCaptureAfterClientTLSRejectsLeaf(t *testing.T) {
+	restore := SetCapturePausePathForTest(filepath.Join(t.TempDir(), "capture-paused"))
+	defer restore()
+
+	srv, err := NewServerStableCA(t.TempDir(), log.New(io.Discard, "", 0), time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.SetCapturePolicy(&CapturePolicy{
+		caPath:                     srv.CAPath(),
+		requireTransparentMetadata: true,
+		lookup: fakeProcessLookup{
+			1234: {Command: "codex CODEX_CA_CERTIFICATE=" + srv.CAPath(), Env: map[string]string{"CODEX_CA_CERTIFICATE": srv.CAPath()}},
+		},
+	})
+	proxyAddr, err := srv.Listen(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	raw, err := net.Dial("tcp", proxyAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	const host = "api.openai.com"
+	fmt.Fprintf(raw,
+		"CONNECT %s:443 HTTP/1.1\r\n"+
+			"Host: %s:443\r\n"+
+			"%s: 1\r\n"+
+			"%s: codex\r\n"+
+			"%s: 1234\r\n"+
+			"\r\n",
+		host, host,
+		headerTransparentFlow,
+		headerSourceSigningID,
+		headerSourcePID,
+	)
+	connBR := bufio.NewReader(raw)
+	if r, err := http.ReadResponse(connBR, &http.Request{Method: "CONNECT"}); err != nil || r.StatusCode != 200 {
+		t.Fatalf("CONNECT failed: %v / %v", err, r)
+	}
+
+	tlsConn := tls.Client(raw, &tls.Config{ServerName: host})
+	if err := tlsConn.Handshake(); err == nil {
+		t.Fatal("client TLS handshake unexpectedly trusted Observatory leaf")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		if paused, reason := CapturePaused(); paused {
+			if !strings.Contains(reason, host) {
+				t.Fatalf("pause reason = %q, want host %q", reason, host)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("capture pause marker was not written after client TLS failure")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if fails, lastHost := srv.ClientTLSFailures(); fails != 1 || lastHost != host {
+		t.Fatalf("ClientTLSFailures = (%d, %q), want (1, %q)", fails, lastHost, host)
 	}
 }
 

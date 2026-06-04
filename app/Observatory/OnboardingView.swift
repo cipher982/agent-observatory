@@ -351,15 +351,15 @@ private struct StepRow: View {
 private struct TrustBoundaryPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("A system extension routes only known LLM provider flows to Observatory's loopback proxy; everything else is untouched. Agents trust the proxy via a local CA in your login keychain. The proxy extracts derived request facts, not stored raw prompt bodies.")
+            Text("A system extension routes only known LLM provider flows to Observatory's loopback proxy; everything else is untouched. Supported, trust-ready coding agents are inspected. Unknown or stale-trust tools stay opaque and show up as pass-through coverage. The proxy extracts derived request facts, not stored raw prompt bodies.")
                 .font(.callout)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
                 GridRow {
-                    TrustFact(symbol: "checkmark.seal.fill", title: "Inspected", detail: "OpenAI, Anthropic, and Bedrock request bodies")
-                    TrustFact(symbol: "lock.fill", title: "Opaque", detail: "Unrelated HTTPS hosts tunnel through unread")
+                    TrustFact(symbol: "checkmark.seal.fill", title: "Inspected", detail: "Supported agent requests with current local CA trust")
+                    TrustFact(symbol: "lock.fill", title: "Opaque", detail: "Unsupported tools, stale trust, and unrelated HTTPS")
                 }
                 GridRow {
                     TrustFact(symbol: "internaldrive", title: "Stored", detail: "Endpoint, prompt length, tool names, evidence marks")

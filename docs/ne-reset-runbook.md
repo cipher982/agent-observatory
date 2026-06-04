@@ -3,7 +3,7 @@
 Use this when the Observatory system-extension state has version churn, stale
 approval prompts, or old extensions waiting to uninstall on reboot.
 
-This runbook is intentionally explicit because the final v0.2 proof depends on
+This runbook is intentionally explicit because the final v0.3 proof depends on
 macOS state, not just code.
 
 ## Preconditions
@@ -62,7 +62,12 @@ xcrun stapler validate "/Applications/Agent Observatory.app"
 ```
 
 For local non-notarized dev builds, `spctl`/`stapler` are expected to fail. For a
-v0.2 release gate, they must pass.
+v0.3 release gate, they must pass.
+
+Important: a Developer-ID-signed System Extension can pass `codesign --verify`
+and still fail activation if the enclosing app is not Gatekeeper-accepted. For a
+public release proof, do not claim live System Extension replacement until the
+app and DMG are notarized/stapled and `make release-qa` passes.
 
 ## 3. Install The Daemon And Stable CA
 
@@ -72,6 +77,7 @@ v0.2 release gate, they must pass.
 "/Applications/Agent Observatory.app/Contents/Resources/agents" trust status
 launchctl print "gui/$(id -u)/com.github.cipher982.agentobservatory"
 curl -fsS http://127.0.0.1:7878/healthz
+make v03-installed-daemon-compat-qa
 ```
 
 Expected:
@@ -79,6 +85,8 @@ Expected:
 - status reports `overall: installed`;
 - launchd service exists;
 - `/healthz` returns `ok: true`;
+- installed daemon compatibility QA proves provider-bound traffic without v0.3
+  source metadata is pass-through coverage, not a broken MITM;
 - trust status reports the current local CA is trusted in the login keychain
   after the explicit trust step below;
 - no proxy env vars such as `HTTPS_PROXY`/`HTTP_PROXY` are installed by
@@ -109,6 +117,24 @@ Expected:
 - exactly the current Observatory extension is `[activated enabled]`;
 - no older Observatory extension remains active;
 - the local CA is trusted in the login keychain.
+
+Run the installed NetworkExtension proof before any authenticated agent smoke:
+
+```bash
+make v03-installed-ne-proof
+```
+
+Expected:
+
+- `/Applications/Agent Observatory.app` is `0.3.0/7`;
+- the bundled helper reports `agent-observatory 0.3.0`;
+- `agents status` reports `overall: installed`;
+- System Extension `0.3.0/7` is `[activated enabled]`;
+- `/healthz` reports `ok: true`, `capturePaused: false`, and
+  `clientTLSFailures: 0`;
+- unrelated HTTP/HTTPS traffic succeeds;
+- an unsupported provider-bound client reaches the provider and is recorded in
+  `/api/coverage` as pass-through, not body capture.
 
 ## 5. Prove Unrelated Traffic Is Untouched
 
@@ -172,7 +198,7 @@ Expected:
 - `/healthz` does not show new `clientTLSFailures`.
 
 Record the exact prompt, completion output, and capture JSON in
-`docs/launch-readiness.md`.
+`docs/v0.3-launch-readiness.md`.
 
 ## 7. Prove Disable And Uninstall
 
@@ -200,7 +226,8 @@ Expected:
   reboot if macOS says activation will complete after reboot.
 - If an older Observatory extension remains `waiting to uninstall on reboot`,
   reboot before claiming clean state.
-- If `/healthz` reports `clientTLSFailures`, restart the agent shell/process so
-  it inherits the additive trust env, or disable capture.
+- If `/healthz` reports `clientTLSFailures`, capture should also pause future
+  flows. Restart the agent shell/process so it inherits the additive trust env,
+  then disable and re-enable capture.
 - If the agent gets 502, check daemon logs for an upstream loop or TLS failure
   before retrying.

@@ -19,7 +19,7 @@
   <img alt="Go" src="https://img.shields.io/badge/Go-1.26-00ADD8">
   <img alt="SwiftUI" src="https://img.shields.io/badge/SwiftUI-Liquid%20Glass-7c3aed">
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/cipher982/agent-observatory/ci.yml?branch=main&label=CI">
-  <img alt="Version" src="https://img.shields.io/badge/version-v0.2.0-f59e0b">
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.3.0-f59e0b">
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 
 The intended first-run experience is the native app:
 
-1. Download `Agent-Observatory-0.2.0-macOS.dmg` from Releases.
+1. Download `Agent-Observatory-0.3.0-macOS.dmg` from Releases.
 2. Open the DMG and drag **Agent Observatory.app** to **Applications**.
 3. Open **Agent Observatory.app** from Applications.
 4. Start with the built-in demo feed. No account, proxy, or trust setup is
@@ -41,8 +41,8 @@ The intended first-run experience is the native app:
 
 The native app currently targets the macOS 26 preview because it uses the new
 Liquid Glass SwiftUI surface. Public release artifacts are Developer ID signed,
-hardened-runtime, notarized, stapled, and checked by `make release-qa` before
-publication.
+hardened-runtime, notarized, stapled, and checked by `make release-qa` and
+`make v03-safe-capture-qa` before publication.
 
 ### Enabling live capture
 
@@ -120,7 +120,7 @@ fact-level model.
 The public artifact is a DMG:
 
 ```bash
-open Agent-Observatory-0.2.0-macOS.dmg
+open Agent-Observatory-0.3.0-macOS.dmg
 ```
 
 Drag **Agent Observatory.app** to **Applications**, then open it. The app starts
@@ -145,12 +145,17 @@ that CA in your **login keychain**, and enables a **NetworkExtension transparent
 proxy** that routes only allowlisted LLM-provider flows to the local proxy.
 
 Then use Claude, Codex, and other agents normally. The system extension diverts
-only provider traffic to Observatory; everything else is untouched. There is no
-global `HTTPS_PROXY` hijack. The only env vars the install sets are the *additive*
-`NODE_EXTRA_CA_CERTS` (Node/Claude Code) and `CODEX_CA_CERTIFICATE` (Codex) —
-because those runtimes don't read the macOS keychain. Both only *add* Observatory's
-CA without replacing the system roots; Bedrock via the AWS Go SDK reads the
-keychain directly and needs nothing.
+only provider traffic to Observatory; everything else is untouched. Full body
+capture is source-aware: supported, trust-ready coding agents are locally
+TLS-inspected, while unknown or stale-trust tools are tunneled opaquely so they
+keep working and appear as pass-through coverage events. If source metadata is
+missing during an upgrade or extension mismatch, the installed daemon also
+treats that as pass-through. There is no global
+`HTTPS_PROXY` hijack. The only env vars the install sets are the *additive*
+`NODE_EXTRA_CA_CERTS` (Node/Claude Code/Gemini CLI) and
+`CODEX_CA_CERTIFICATE` (Codex) — because those runtimes don't all read the macOS
+keychain. Both only *add* Observatory's CA without replacing the system roots;
+Bedrock via the AWS Go SDK reads the keychain directly and needs nothing.
 
 No wrapper command in the primary flow. No managed launch. No browser extension.
 The onboarding panel also exposes the reset command; the equivalent CLI command
@@ -210,10 +215,14 @@ open /tmp/observatory-dd/Build/Products/Debug/Agent\ Observatory.app
 
 ```bash
 make qa
+make v03-safe-capture-qa
 ```
 
-This runs backend build, vet, unit tests, race tests, install lifecycle QA, and
-the macOS app build.
+Together these run backend build, vet, unit tests, race tests, install lifecycle
+QA, the macOS app build, and the 0.3 safe-capture policy smoke. The
+safe-capture QA starts a temporary daemon and proves one supported-source
+provider request is captured while one unknown provider-bound client is tunneled
+and reported in `/api/coverage`.
 
 ## Trust Model
 
@@ -228,15 +237,18 @@ user-approved system extension). To inspect by hostname, the extension's kernel
 rule takes **all outbound TCP :443 flows** into the (local, user-space) system
 extension, peeks the TLS ClientHello SNI, and then:
 
-- **allowlisted provider SNI** → relays the flow to the local proxy, which
-  terminates TLS and parses the request; or
+- **allowlisted provider SNI from a supported, trust-ready source** → relays the
+  flow to the local proxy, which terminates TLS and parses the request;
+- **allowlisted provider SNI from an unknown or stale-trust source** → relays an
+  opaque tunnel through the local proxy with **no TLS termination**; or
 - **anything else** → **immediately direct-relays** to the real destination with
   **no TLS termination and nothing persisted** — the flow is untouched in every
   way that matters (its bytes are copied through; we never see plaintext).
 
-So there is no global `HTTPS_PROXY`/`HTTP_PROXY` hijack, and only provider flows
-are ever decrypted. (Loopback/RFC1918 are excluded at the kernel rule; UDP/QUIC
-is never taken.) For agents to accept the local proxy's certificates, Observatory
+So there is no global `HTTPS_PROXY`/`HTTP_PROXY` hijack, and provider flows are
+decrypted only after both the host allowlist and source/trust policy agree.
+(Loopback/RFC1918 are excluded at the kernel rule; UDP/QUIC is never taken.) For
+agents to accept the local proxy's certificates on the full-capture path, Observatory
 installs its CA into your **login keychain** (per-user, never the System
 keychain) at the moment you approve the system extension; `agents uninstall` (and
 disabling capture) removes that trust.
@@ -253,13 +265,17 @@ keychain root isn't enough:
   the *additive* `CODEX_CA_CERTIFICATE` (Codex's own custom-CA var), since Codex
   uses rustls/native-tls rather than the macOS keychain.
 - **Bedrock via the AWS Go SDK** reads the login keychain directly → no env var.
+- **Gemini CLI** is a Node CLI candidate → source attribution plus current
+  `NODE_EXTRA_CA_CERTS` is required before full capture.
 
 Both env vars only *add* Observatory's CA; they never replace the system roots,
 so unrelated HTTPS is unaffected. The install sets **no** `HTTPS_PROXY`/
 `HTTP_PROXY` and **no** root-replacing `SSL_CERT_FILE`/`AWS_CA_BUNDLE`: routing is
-the extension's job. Caveat: env vars only reach **newly launched** agents — a
-shell or agent already running when you enable capture won't trust the CA (and
-will fail provider TLS) until restarted.
+the extension's job. Caveat: env vars only reach processes that actually inherit
+them. Agent Observatory 0.3 treats missing or stale runtime trust as a bypass
+condition: the provider request is tunneled opaquely instead of being locally
+TLS-terminated. If a client still rejects an Observatory leaf, the capture pause
+circuit breaker passes future provider traffic through.
 
 ```mermaid
 sequenceDiagram
@@ -306,6 +322,7 @@ Important boundaries:
 | Anthropic Messages body shape | Verified parser coverage | Covered by native Anthropic proxy-path test. |
 | Bedrock Anthropic body shape | Verified parser coverage | Covered by backend proxy parser tests. |
 | Install-once ambient capture | Local QA | Install/status/uninstall are covered by repeated fake-home lifecycle tests. |
+| Source-aware provider capture | Local live-provider QA | `make v03-safe-capture-qa` proves supported-source capture plus unknown-source pass-through. |
 
 ## Commands
 
@@ -320,6 +337,7 @@ Important boundaries:
 | `agents sessions --limit 20` | Print recent sessions and evidence marks. |
 | `agents context explain /path/to/project` | Show resolved context for a workspace. |
 | `agents doctor wire` | Report verified-capture capability per runtime. |
+| `/api/coverage` | Local daemon endpoint with capture/bypass counts and recent pass-through reasons. |
 
 ## Release Artifacts
 
@@ -329,8 +347,8 @@ make release
 
 Artifacts are written to `dist/`:
 
-- `Agent-Observatory-0.2.0-macOS.dmg`
-- `Agent-Observatory-0.2.0-macOS.zip`
+- `Agent-Observatory-0.3.0-macOS.dmg`
+- `Agent-Observatory-0.3.0-macOS.zip`
 - `Agent Observatory.app`
 - `agents`
 - `SHA256SUMS`
@@ -356,24 +374,28 @@ APP_STORE_CONNECT_KEY_ID=<key-id> \
 APP_STORE_CONNECT_API_KEY_P8=/path/to/AuthKey_<key-id>.p8 \
 APP_STORE_CONNECT_ISSUER_ID=<issuer-uuid> \
 make notarize
+# or:
+MACOS_NOTARY_APPLE_ID=<apple-id> \
+MACOS_NOTARY_APP_PASSWORD=<app-specific-password> \
+MACOS_NOTARY_TEAM_ID=<team-id> \
+make notarize
+make v03-safe-capture-qa
 make release-qa
-make v02-readiness
 ```
 
-The final interactive release gates are grouped behind an explicit helper:
+There is also a manual GitHub Actions release workflow, **macOS Release**, for
+building, notarizing, and optionally staging a draft release on a macOS runner
+once the repository release secrets in `docs/release-publication-runbook.md` are
+configured.
 
-```bash
-make v02-finalize                         # read-only status
-scripts/v02-finalize.sh --trust           # may prompt for login-keychain trust
-NOTARY_PROFILE=<profile> scripts/v02-finalize.sh --notarize
-CONFIRM_STAGE_V02=1 scripts/v02-finalize.sh --stage
-CONFIRM_PUBLISH_V02=1 scripts/v02-finalize.sh --publish
-```
+The older v0.2 finalize helpers remain in `scripts/` for the published v0.2
+release. They are not 0.3 launch gates.
 
 The DMG is the primary user-facing artifact. It contains
 **Agent Observatory.app** and an **Applications** symlink for the normal macOS
 drag-install flow. The zip is a fallback. A build is publication-ready only
-after `make release-qa` passes against the stapled app and DMG.
+after `make v03-safe-capture-qa` passes and `make release-qa` passes against the
+stapled app and DMG.
 
 Security notes for the local CA, prompt-data handling, and vulnerability reports
 are in [SECURITY.md](SECURITY.md).
@@ -395,17 +417,24 @@ Capture mechanism:
 Per-runtime CA trust (`NODE_EXTRA_CA_CERTS`, `CODEX_CA_CERTIFICATE`):
 
 - It's additive trust, not routing — and it only helps **newly launched**
-  processes that inherit the env. Already-running shells/agents must restart, or
-  they'll fail provider TLS with an untrusted-issuer error while capture is on.
+  processes that inherit the env. In 0.3, provider flows from supported runtimes
+  with missing or stale trust are tunneled opaquely instead of full-captured.
+  That is a missed capture, not a broken agent.
 - **Node/Bun (Claude Code):** a client that passes an explicit `ca:` option,
   sanitizes its env, or embeds its own runtime won't pick up
   `NODE_EXTRA_CA_CERTS`. Bun honors only its own CA store for some operations.
+- **Hatch/OpenCode:** Hatch's MCP path keeps a persistent `opencode serve`
+  process. If that server started before Observatory trust existed, restart
+  Hatch MCP/OpenCode before enabling capture. `agents doctor wire` flags running
+  Hatch OpenCode servers with missing or stale trust.
 - **Codex CLI:** its primary `wss://…/responses` transport can't be inspected, so
   the proxy replies `426` and Codex falls back to its HTTP endpoint (which *is*
-  captured). HTTP-path trust uses the additive `CODEX_CA_CERTIFICATE` (Codex uses
-  rustls/native-tls, not the keychain). Verified against codex 0.134.x. Other
+  captured). HTTP-path trust uses the additive `CODEX_CA_CERTIFICATE`. Other
   provider WebSockets with no HTTP fallback (e.g. OpenAI Realtime `/v1/realtime`)
   are relayed untouched, not captured — so they keep working.
+- **Gemini CLI:** generativelanguage.googleapis.com `generateContent` requests
+  are parsed when the source is attributable to Gemini's Node process with
+  current `NODE_EXTRA_CA_CERTS`; otherwise they are tunneled.
 - **Bedrock (AWS Go SDK):** reads the login keychain directly, needs no env.
 - These vars add a trusted root for inheriting processes; removed by
   `agents uninstall`.
@@ -432,6 +461,7 @@ Scope:
 
 ```bash
 make backend-qa
+make v03-safe-capture-qa
 make app-build
 make release
 make release-layout-qa
@@ -441,11 +471,20 @@ APP_STORE_CONNECT_KEY_ID=<key-id> \
 APP_STORE_CONNECT_API_KEY_P8=/path/to/AuthKey_<key-id>.p8 \
 APP_STORE_CONNECT_ISSUER_ID=<issuer-uuid> \
 make notarize
+# or:
+MACOS_NOTARY_APPLE_ID=<apple-id> \
+MACOS_NOTARY_APP_PASSWORD=<app-specific-password> \
+MACOS_NOTARY_TEAM_ID=<team-id> \
+make notarize
+make v03-safe-capture-qa
 make release-qa
 ```
 
 Detailed release and planning notes live under `docs/`, including
-[`docs/v0.2-readiness.md`](docs/v0.2-readiness.md),
+[`docs/v0.3-safe-capture-spec.md`](docs/v0.3-safe-capture-spec.md),
+[`docs/v0.3-launch-readiness.md`](docs/v0.3-launch-readiness.md),
 [`docs/ne-reset-runbook.md`](docs/ne-reset-runbook.md),
 [`docs/release-publication-runbook.md`](docs/release-publication-runbook.md),
-and [`docs/release-v0.2-draft.md`](docs/release-v0.2-draft.md).
+and [`docs/release-v0.3-draft.md`](docs/release-v0.3-draft.md). Historical
+v0.2 records remain in [`docs/v0.2-readiness.md`](docs/v0.2-readiness.md) and
+[`docs/release-v0.2-draft.md`](docs/release-v0.2-draft.md).

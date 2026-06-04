@@ -9,6 +9,8 @@ import (
 // the assembled system prompt + tool names. It recognizes:
 //   - Anthropic native:        POST .../v1/messages           (host api.anthropic.com)
 //   - OpenAI/Codex:            POST .../chat/completions, .../responses
+//   - Gemini API:              POST ...:generateContent,
+//     ...:streamGenerateContent on generativelanguage.googleapis.com
 //   - Bedrock (classic):       POST /model/{id}/invoke[-with-response-stream]
 //     host bedrock-runtime.<region>.amazonaws.com
 //     BODY = Anthropic Messages shape (anthropic_version,
@@ -31,9 +33,15 @@ func ParseBody(host, path string, body []byte) (Capture, bool) {
 		return parseOpenAIChat(body)
 	case strings.HasSuffix(path, "/responses"):
 		return parseOpenAIResponses(body)
+	case host == "generativelanguage.googleapis.com" && isGeminiGenerateContent(path):
+		return parseGeminiGenerateContent(body)
 	default:
 		return Capture{}, false
 	}
+}
+
+func isGeminiGenerateContent(path string) bool {
+	return strings.Contains(path, ":generateContent") || strings.Contains(path, ":streamGenerateContent")
 }
 
 func isBedrockInvoke(host, path string) bool {
@@ -201,4 +209,54 @@ func decodeContent(raw json.RawMessage) string {
 		return strings.Join(out, "\n")
 	}
 	return ""
+}
+
+func parseGeminiGenerateContent(body []byte) (Capture, bool) {
+	var req struct {
+		SystemInstruction geminiContent   `json:"systemInstruction"`
+		Contents          []geminiContent `json:"contents"`
+		Tools             []struct {
+			FunctionDeclarations []struct {
+				Name string `json:"name"`
+			} `json:"functionDeclarations"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return Capture{}, false
+	}
+	c := Capture{Endpoint: "google/generateContent"}
+	c.SystemPrompt = req.SystemInstruction.text()
+	var all []string
+	if c.SystemPrompt != "" {
+		all = append(all, c.SystemPrompt)
+	}
+	for _, content := range req.Contents {
+		if txt := content.text(); txt != "" {
+			all = append(all, txt)
+		}
+	}
+	for _, tool := range req.Tools {
+		for _, fn := range tool.FunctionDeclarations {
+			if fn.Name != "" {
+				c.ToolNames = append(c.ToolNames, fn.Name)
+			}
+		}
+	}
+	return finalize(c, strings.Join(all, "\n"))
+}
+
+type geminiContent struct {
+	Parts []struct {
+		Text string `json:"text"`
+	} `json:"parts"`
+}
+
+func (c geminiContent) text() string {
+	var parts []string
+	for _, p := range c.Parts {
+		if p.Text != "" {
+			parts = append(parts, p.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }

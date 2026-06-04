@@ -41,7 +41,7 @@ struct LiveFeedView: View {
                 .foregroundStyle(.cyan)
             VStack(alignment: .leading, spacing: 1) {
                 Text(engine.demoMode ? "Demo activity" : "Live activity").font(.headline)
-                Text(engine.demoMode ? "sample agent requests" : "requests captured after install")
+                Text(engine.demoMode ? "sample agent requests" : "captures and pass-through coverage")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -85,8 +85,8 @@ struct LiveFeedView: View {
     }
 }
 
-// One captured request, as a glass card. Tint encodes runtime; a witness badge
-// confirms the request body shape was parsed into derived facts.
+// One provider request, either captured or intentionally passed through. Tint
+// encodes runtime/status; a witness badge confirms whether body evidence exists.
 struct LiveRequestCard: View {
     let event: LiveEvent
     @State private var appeared = false
@@ -107,15 +107,32 @@ struct LiveRequestCard: View {
                     Text(timeShort).font(.caption).foregroundStyle(.secondary)
                 }
                 Text(event.host).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                HStack(spacing: 10) {
-                    metric("\(event.systemChars)", "chars", .blue)
-                    metric("\(event.toolCount)", "tools", .mint)
-                    parsedBadge
-                }
-                if let tools = event.toolNames, !tools.isEmpty {
-                    Text(tools.prefix(8).joined(separator: " · "))
-                        .font(.caption2.monospaced()).foregroundStyle(.secondary)
-                        .lineLimit(2)
+                if event.bypassed {
+                    if let reason = event.reason {
+                        Text(reason)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    if let source = event.source, !source.isEmpty {
+                        Text(source)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    bypassBadge
+                } else {
+                    HStack(spacing: 10) {
+                        metric("\(event.systemChars)", "chars", .blue)
+                        metric("\(event.toolCount)", "tools", .mint)
+                        parsedBadge
+                    }
+                    if let tools = event.toolNames, !tools.isEmpty {
+                        Text(tools.prefix(8).joined(separator: " · "))
+                            .font(.caption2.monospaced()).foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
                 }
             }
         }
@@ -144,17 +161,30 @@ struct LiveRequestCard: View {
         .foregroundStyle(event.parsed ? .green : .orange)
     }
 
+    private var bypassBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+            Text("passed through")
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.orange)
+    }
+
     private var runtimeIcon: String {
+        if event.bypassed { return "shield" }
         switch event.runtime {
         case "claude": return "brain.head.profile"
         case "codex": return "chevron.left.forwardslash.chevron.right"
+        case "gemini": return "sparkles"
         default: return "cpu"
         }
     }
     private var runtimeColor: Color {
+        if event.bypassed { return .orange }
         switch event.runtime {
         case "claude": return .purple
         case "codex": return .green
+        case "gemini": return .blue
         default: return .gray
         }
     }

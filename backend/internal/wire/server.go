@@ -27,10 +27,14 @@ type Server struct {
 	mu              sync.Mutex
 	sessionID       string
 	captures        []Capture
+	bypasses        []Bypass
 	subscribers     map[int]chan Capture
+	bypassSubs      map[int]chan Bypass
 	nextSub         int
+	nextBypassSub   int
 	clientTLSFails  int // agent handshakes rejected (untrusted CA)
 	lastTLSFailHost string
+	pauseOnTLSFail  bool
 }
 
 // NewServer builds a proxy server with an ephemeral CA whose PEM is written under
@@ -50,18 +54,37 @@ func NewServerStableCA(caDir string, logger *log.Logger, now time.Time) (*Server
 	if err != nil {
 		return nil, err
 	}
-	return newServerWithCA(ca, logger), nil
+	s := newServerWithCA(ca, logger)
+	s.pauseOnTLSFail = true
+	// Stable/installed mode is reached from the NetworkExtension. Require the
+	// v0.3 source-metadata marker before inspecting so an older/malformed relay
+	// fails open as pass-through instead of MITMing unknown clients.
+	s.proxy.capturePolicy.requireTransparentMetadata = true
+	return s, nil
 }
 
 func newServerWithCA(ca *CA, logger *log.Logger) *Server {
-	s := &Server{ca: ca, log: logger, subscribers: map[int]chan Capture{}}
+	if logger == nil {
+		logger = log.Default()
+	}
+	s := &Server{ca: ca, log: logger, subscribers: map[int]chan Capture{}, bypassSubs: map[int]chan Bypass{}}
 	p := NewProxy(ca, logger)
 	p.OnCapture = s.record
-	p.OnClientHandshakeError = func(host string, _ error) {
+	p.OnBypass = s.recordBypass
+	p.OnClientHandshakeError = func(host string, err error) {
 		s.mu.Lock()
 		s.clientTLSFails++
 		s.lastTLSFailHost = host
+		pause := s.pauseOnTLSFail
 		s.mu.Unlock()
+		if pause {
+			reason := fmt.Sprintf("paused after client TLS trust failure for %s at %s: %v", host, time.Now().Format(time.RFC3339), err)
+			if perr := PauseCapture(reason); perr != nil {
+				logger.Printf("[wire] capture pause marker failed: %v", perr)
+			} else {
+				logger.Printf("[wire] capture paused: %s", reason)
+			}
+		}
 	}
 	s.proxy = p
 	return s
@@ -69,7 +92,7 @@ func newServerWithCA(ca *CA, logger *log.Logger) *Server {
 
 // ClientTLSFailures reports how many times an agent rejected our leaf cert (the
 // "agent doesn't trust the CA" case) and the most recent host. The daemon
-// surfaces this so the UI can warn that capture is breaking an agent.
+// surfaces this so the UI can explain why capture was paused.
 func (s *Server) ClientTLSFailures() (count int, lastHost string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -97,6 +120,22 @@ func (s *Server) Subscribe() (<-chan Capture, func()) {
 	}
 }
 
+// SubscribeBypasses returns future provider flows that were safely tunneled
+// instead of TLS-inspected.
+func (s *Server) SubscribeBypasses() (<-chan Bypass, func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.nextBypassSub
+	s.nextBypassSub++
+	ch := make(chan Bypass, 64)
+	s.bypassSubs[id] = ch
+	return ch, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		delete(s.bypassSubs, id)
+	}
+}
+
 // SetUpstreamTLS overrides the upstream-dial TLS config (tests trust a local
 // self-signed server; production uses system roots).
 func (s *Server) SetUpstreamTLS(cfg *tls.Config) { s.proxy.SetUpstreamTLS(cfg) }
@@ -104,6 +143,10 @@ func (s *Server) SetUpstreamTLS(cfg *tls.Config) { s.proxy.SetUpstreamTLS(cfg) }
 // SetInspectHost overrides the host inspection policy. Tests use this to inspect
 // localhost; production defaults to known LLM provider endpoints only.
 func (s *Server) SetInspectHost(fn func(host string) bool) { s.proxy.SetInspectHost(fn) }
+
+// SetCapturePolicy overrides the transparent-capture source/trust gate. Tests
+// use this to prove supported, stale, and unknown-source behavior deterministically.
+func (s *Server) SetCapturePolicy(policy *CapturePolicy) { s.proxy.SetCapturePolicy(policy) }
 
 // SetSession sets the session id captures are attributed to.
 func (s *Server) SetSession(id string) {
@@ -121,6 +164,8 @@ func (s *Server) Inject(c Capture) { s.record(c) }
 // retains the full assembled prompt text). We keep the most recent N.
 const maxCaptures = 500
 
+const maxBypasses = 500
+
 func (s *Server) record(c Capture) {
 	s.mu.Lock()
 	s.captures = append(s.captures, c)
@@ -137,6 +182,31 @@ func (s *Server) record(c Capture) {
 	for _, ch := range subs {
 		select {
 		case ch <- c:
+		default:
+		}
+	}
+}
+
+func (s *Server) recordBypass(b Bypass) {
+	if b.Runtime == "" {
+		b.Runtime = runtimeForProviderHost(b.Host)
+	}
+	if b.When.IsZero() {
+		b.When = time.Now()
+	}
+	s.mu.Lock()
+	s.bypasses = append(s.bypasses, b)
+	if len(s.bypasses) > maxBypasses {
+		s.bypasses = append([]Bypass(nil), s.bypasses[len(s.bypasses)-maxBypasses:]...)
+	}
+	subs := make([]chan Bypass, 0, len(s.bypassSubs))
+	for _, ch := range s.bypassSubs {
+		subs = append(subs, ch)
+	}
+	s.mu.Unlock()
+	for _, ch := range subs {
+		select {
+		case ch <- b:
 		default:
 		}
 	}
@@ -173,6 +243,26 @@ func (s *Server) Captures() []Capture {
 	out := make([]Capture, len(s.captures))
 	copy(out, s.captures)
 	return out
+}
+
+// Bypasses returns a copy of recent provider flows that were intentionally not
+// full-captured.
+func (s *Server) Bypasses() []Bypass {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Bypass, len(s.bypasses))
+	copy(out, s.bypasses)
+	return out
+}
+
+func (s *Server) BypassStats() (total int, last Bypass) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	total = len(s.bypasses)
+	if total > 0 {
+		last = s.bypasses[total-1]
+	}
+	return total, last
 }
 
 // Observations converts captured wire requests into VERIFIED tool observations

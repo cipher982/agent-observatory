@@ -7,7 +7,7 @@ import Foundation
 // This is the kernel-flow gate; it MUST match the Go proxy's defaultInspectHost
 // (backend/internal/wire/proxy.go) exactly, or we'd divert flows the Go side
 // won't actually inspect. Mirror of that switch:
-//   h == "api.openai.com" || h == "api.anthropic.com"
+//   h == "api.openai.com" || h == "api.anthropic.com" || h == "generativelanguage.googleapis.com"
 //   || (contains "bedrock-runtime." && hasSuffix ".amazonaws.com")
 //   || (hasPrefix "aws-external-anthropic." && hasSuffix ".api.aws")
 struct Allowlist {
@@ -15,7 +15,7 @@ struct Allowlist {
 
     func contains(_ host: String) -> Bool {
         let h = host.lowercased().trimmingTrailingDot()
-        if h == "api.openai.com" || h == "api.anthropic.com" { return true }
+        if h == "api.openai.com" || h == "api.anthropic.com" || h == "generativelanguage.googleapis.com" { return true }
         if h.contains("bedrock-runtime.") && h.hasSuffix(".amazonaws.com") { return true }
         if h.hasPrefix("aws-external-anthropic.") && h.hasSuffix(".api.aws") { return true }
         return false

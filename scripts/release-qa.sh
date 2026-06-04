@@ -8,7 +8,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:-0.2.0}"
+VERSION="${VERSION:-0.3.0}"
 DIST="$ROOT/dist"
 APP_NAME="Agent Observatory.app"
 DMG_NAME="Agent-Observatory-${VERSION}-macOS.dmg"

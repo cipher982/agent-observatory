@@ -9,6 +9,7 @@ enum CaptureResetCommand {
         guard CommandLine.arguments.contains(flag) else { return }
         let configRemoved = removeTunnelConfiguration()
         let trustRemoved = runHelperTrustRemove()
+        CapturePauseGate.clear()
         if configRemoved && trustRemoved {
             FileHandle.standardOutput.write(Data("capture reset: removed Observatory capture config and CA trust\n".utf8))
             Foundation.exit(0)

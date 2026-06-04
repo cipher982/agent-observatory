@@ -21,7 +21,7 @@ import (
 	"os"
 )
 
-const observatoryVersion = "0.2.0"
+const observatoryVersion = "0.3.0"
 
 func main() {
 	// Fold persisted wire captures into the fact pipeline as VERIFIED evidence

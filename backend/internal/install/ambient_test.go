@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -118,7 +119,12 @@ func TestAmbientInstallFreshProcessCaptureHelper(t *testing.T) {
 		t.Fatal("could not trust Observatory CA")
 	}
 	client := &http.Client{Transport: &http.Transport{
-		Proxy:           http.ProxyURL(proxyURL),
+		Proxy: http.ProxyURL(proxyURL),
+		ProxyConnectHeader: http.Header{
+			"X-Agent-Observatory-Transparent-Flow":  {"1"},
+			"X-Agent-Observatory-Source-Signing-ID": {"com.anthropic.claude-code"},
+			"X-Agent-Observatory-Source-PID":        {fmt.Sprint(os.Getpid())},
+		},
 		TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
 	}, Timeout: 10 * time.Second}
 	body := []byte(`{"system":"ambient install proof","tools":[{"name":"mcp__proof__run"}],"messages":[]}`)

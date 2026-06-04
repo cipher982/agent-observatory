@@ -1,4 +1,5 @@
 import XCTest
+import SystemExtensions
 // SNI.swift and Allowlist.swift are compiled directly into this test bundle
 // (see project.yml) — they're pure logic with no NetworkExtension dependency.
 
@@ -57,6 +58,7 @@ final class SNITests: XCTestCase {
         // Allowed — must mirror Go defaultInspectHost exactly.
         XCTAssertTrue(a.contains("api.anthropic.com"))
         XCTAssertTrue(a.contains("api.openai.com"))
+        XCTAssertTrue(a.contains("generativelanguage.googleapis.com"))
         XCTAssertTrue(a.contains("bedrock-runtime.us-east-1.amazonaws.com"))
         XCTAssertTrue(a.contains("aws-external-anthropic.us-east-1.api.aws"))
         XCTAssertTrue(a.contains("API.ANTHROPIC.COM"))            // case-insensitive
@@ -69,5 +71,29 @@ final class SNITests: XCTestCase {
         XCTAssertFalse(a.contains("aws-external-anthropic.evil.com")) // right prefix, wrong suffix
         XCTAssertFalse(a.contains("notanthropic.com"))
         XCTAssertFalse(a.contains("api.openai.com.evil.com"))     // not exact
+        XCTAssertFalse(a.contains("generativelanguage.googleapis.com.evil.com"))
+    }
+
+    func testCapturePauseGatePathContract() {
+        XCTAssertEqual(CapturePauseGate.path, "/tmp/agent-observatory-capture-paused")
+    }
+
+    func testSourceMetadataHeadersAreSanitized() {
+        let meta = SourceMetadata(signingIdentifier: "com.example.tool\r\nX-Bad: nope", pid: 42)
+        let headers = Dictionary(uniqueKeysWithValues: meta.connectHeaders)
+        XCTAssertEqual(headers["X-Agent-Observatory-Transparent-Flow"], "1")
+        XCTAssertEqual(headers["X-Agent-Observatory-Source-Signing-ID"], "com.example.toolX-Bad: nope")
+        XCTAssertEqual(headers["X-Agent-Observatory-Source-PID"], "42")
+    }
+
+    func testActivationErrorExplainsGatekeeperSignatureFailure() {
+        let error = NSError(
+            domain: OSSystemExtensionErrorDomain,
+            code: 8,
+            userInfo: [NSLocalizedDescriptionKey: "code signature invalid"]
+        )
+        let message = ActivationErrorFormatter.message(for: error)
+        XCTAssertTrue(message.localizedCaseInsensitiveContains("notarized"), message)
+        XCTAssertTrue(message.localizedCaseInsensitiveContains("Gatekeeper"), message)
     }
 }
