@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,7 +77,7 @@ func TestAmbientInstallFreshProcessCapture(t *testing.T) {
 	// can't install a kernel transparent proxy) and trust the stable CA the way
 	// the install delivers it (NODE_EXTRA_CA_CERTS for the Node-style helper).
 	cmd := exec.Command(os.Args[0], "-test.run=TestAmbientInstallFreshProcessCaptureHelper", "--")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(envWithout("NODE_EXTRA_CA_CERTS", "CODEX_CA_CERTIFICATE", "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY"),
 		"OBS_AMBIENT_HELPER=1",
 		"OBS_AMBIENT_URL=https://"+upHost+":"+upPort+"/v1/messages",
 		"HTTPS_PROXY=http://"+proxyAddr,
@@ -98,6 +99,22 @@ func TestAmbientInstallFreshProcessCapture(t *testing.T) {
 	if caps[0].Endpoint != "anthropic/messages" || len(caps[0].ToolNames) != 1 {
 		t.Fatalf("capture = %+v, want anthropic/messages with one tool", caps[0])
 	}
+}
+
+func envWithout(keys ...string) []string {
+	drop := map[string]bool{}
+	for _, key := range keys {
+		drop[key] = true
+	}
+	env := os.Environ()
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		if !drop[name] {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 func TestAmbientInstallFreshProcessCaptureHelper(t *testing.T) {
