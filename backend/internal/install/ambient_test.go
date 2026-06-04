@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,10 @@ import (
 )
 
 func TestAmbientInstallFreshProcessCapture(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("fresh-process ambient trust proof depends on Darwin process env lookup")
+	}
+
 	tmp := t.TempDir()
 	home := filepath.Join(tmp, "home")
 	if err := os.MkdirAll(home, 0o755); err != nil {
