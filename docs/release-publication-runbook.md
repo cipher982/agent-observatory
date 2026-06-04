@@ -58,7 +58,7 @@ secrets in Infisical, mirrors them to GitHub Actions, then runs both doctors:
 ```bash
 INFISICAL_RELEASE_PROJECT_ID=<infisical-project-id> \
 OP_NOTARY_ITEM=<one-password-item-id-or-name> \
-scripts/stage-release-secrets-local.sh
+make release-secrets-stage
 ```
 
 If `MACOS_NOTARY_APPLE_ID`, `MACOS_NOTARY_APP_PASSWORD`, and

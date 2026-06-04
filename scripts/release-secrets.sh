@@ -262,6 +262,21 @@ print_secret_status() {
   return "$missing"
 }
 
+print_staged_secret_hint() {
+  cat <<'EOF'
+Release secret staging:
+  Preferred front-loaded local ceremony:
+    INFISICAL_RELEASE_PROJECT_ID=<project-id> \
+    OP_NOTARY_ITEM=<one-password-item-id-or-name> \
+    make release-secrets-stage
+
+  If MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_APP_PASSWORD, and
+  MACOS_NOTARY_TEAM_ID are already exported, omit OP_NOTARY_ITEM.
+
+  Details: docs/release-publication-runbook.md
+EOF
+}
+
 print_profile_status() {
   local label="$1"
   local expected_name="$2"
@@ -312,6 +327,11 @@ doctor() {
     rc=1
   fi
 
+  if [ "$rc" -ne 0 ]; then
+    echo
+    print_staged_secret_hint
+  fi
+
   return "$rc"
 }
 
@@ -327,6 +347,10 @@ github_doctor() {
   fi
 
   print_secret_status || rc=1
+  if [ "$rc" -ne 0 ]; then
+    echo
+    print_staged_secret_hint
+  fi
   return "$rc"
 }
 

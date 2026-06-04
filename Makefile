@@ -1,4 +1,4 @@
-.PHONY: qa backend-qa app-project app-build release release-polished notarize release-layout-qa release-qa release-secrets-doctor v03-safe-capture-qa v03-installed-daemon-compat-qa v03-installed-ne-proof v02-readiness v02-finalize release-open clean
+.PHONY: qa backend-qa app-project app-build release release-polished notarize release-layout-qa release-qa release-secrets-doctor release-secrets-stage v03-safe-capture-qa v03-installed-daemon-compat-qa v03-installed-ne-proof v02-readiness v02-finalize release-open clean
 
 VERSION ?= 0.3.0
 DERIVED_DATA ?= /tmp/observatory-dd
@@ -57,6 +57,9 @@ release-qa:
 
 release-secrets-doctor:
 	bash scripts/release-secrets.sh doctor
+
+release-secrets-stage:
+	bash scripts/stage-release-secrets-local.sh
 
 v03-safe-capture-qa:
 	bash scripts/v03-safe-capture-qa.sh
