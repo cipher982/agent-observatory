@@ -26,6 +26,11 @@
   <img src="docs/screenshots/live-feed.png" width="900" alt="Agent Observatory live feed showing verified agent sessions and captured LLM requests">
 </p>
 
+<p align="center">
+  A project by <a href="https://drose.io/">David W. Rose</a>
+  (<a href="https://github.com/cipher982">cipher982</a>).
+</p>
+
 ## Try It
 
 The intended first-run experience is the native app:
