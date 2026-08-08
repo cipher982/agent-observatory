@@ -220,6 +220,29 @@ Expected:
 - Observatory CA trust is gone;
 - provider traffic reaches the real network path.
 
+## Activation Failures Are Sequential
+
+`OSSystemExtensionError` codes arrive one at a time, and fixing one reveals the
+next. Do not treat a new code as a regression.
+
+| Code | Cause | Fix |
+|---|---|---|
+| 4 `extensionNotFound` | The `.systemextension` wrapper basename does not equal the extension's bundle id | `PRODUCT_NAME` is the full bundle id; keep `EXECUTABLE_NAME` short. Needs `CFBundlePackageType: SYSX`. See `app/project.yml` |
+| 3 `unsupportedParentBundleLocation` | Running from `/tmp`, DerivedData, or a mounted DMG | System extensions activate only from `/Applications` |
+| 8 | Un-notarized or invalid signature | Notarize before activating |
+| 9 | Entitlement validation | See the App Sandbox trap below |
+
+**The App Sandbox trap.** Adding App Sandbox to a Developer ID system extension
+*causes* code 9. It reads like a hardening step and is the opposite. Do not add it.
+
+**Reading the real error.** `os.Logger` output for this subsystem is not visible
+through `log show`. Run the binary directly and read `FileHandle.standardError` to
+get the actual code, otherwise you are guessing.
+
+**Stale copies.** LaunchServices accumulates every Observatory app it has seen
+(DMG mounts, DerivedData builds). When testing activation, keep only the
+`/Applications` copy or macOS may match the wrong one.
+
 ## Failure Handling
 
 - If the extension remains `waiting for user`, approve it in System Settings or

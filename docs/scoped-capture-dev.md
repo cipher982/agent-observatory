@@ -50,3 +50,24 @@ extension can allowlist it. Built by `make devharness`.
    - confirm a capture appears for it.
    - daemon log shows NO `x509: unknown authority` loop.
 5. Remove the file + disable capture when done.
+
+## Replacing the extension during iteration
+
+The extension only swaps on an `activate()` that uses `.replace`, so a plain
+rebuild-and-install does not take effect.
+
+- **Bump `CURRENT_PROJECT_VERSION` or macOS will not replace it.** It needs a
+  distinct version to consider the new bundle newer. This is the single most
+  common reason a "fixed" extension still shows old behavior.
+- Drive the replace headlessly through the menu-bar kill switch rather than
+  clicking: AppleScript `click menu bar item 1 of menu bar 2`, then "Disable Live
+  Capture" / "Enable Live Capture". This swapped v1 to v3 with no re-approval
+  prompt, because the team and identifier are unchanged.
+
+## A capture event does not prove the forward succeeded
+
+An entry appearing in the SSE feed only means the proxy saw the flow. It says
+nothing about whether the request reached the provider. Always confirm the client
+got a real upstream response (a provider 401 or 405), not a 502. A curl-with-CA
+test masked exactly this: the event appeared while the agent's request was
+looping back and never leaving the machine.
