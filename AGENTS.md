@@ -43,10 +43,9 @@ If `MACOS_NOTARY_APPLE_ID`, `MACOS_NOTARY_APP_PASSWORD`, and
 `MACOS_NOTARY_TEAM_ID` are already exported, omit `OP_NOTARY_ITEM`.
 
 Do not probe 1Password, Keychain, and GitHub secrets piecemeal. The staged
-workflow is intentionally designed so human approval prompts happen up front,
-then Infisical and GitHub sync run non-interactively. Infisical is David's
-operator source of truth; the public repo and GitHub Actions consume ordinary
-environment variables/secrets.
+workflow runs approval prompts up front, then Infisical + GitHub sync
+non-interactively. Infisical is David's operator source of truth; the public
+repo and GitHub Actions consume ordinary env vars/secrets.
 
 Reference: `docs/release-publication-runbook.md`.
 
